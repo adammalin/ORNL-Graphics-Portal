@@ -91,3 +91,16 @@ Business-field apply remains Stage 3; MCP/agent grants remain Stage 2. Native pu
 Set `ai.browserPilotEnabled` false to stop AI access while preserving private data and ordinary job behavior. Feature checks reload on requests; refresh the page to remove active controls. Do not erase the private database or restore an older sheet to roll back AI.
 
 Migration 2 is deliberately rejected by older application code that knows only migration 1. The safest rollback is to keep the compatible Stage 1 build with AI disabled. A code downgrade requires a planned, compatible metadata migration/restore that preserves all native save receipts and identities; do not discard newer receipts or blindly reopen uncertain native writes.
+
+## Second real tester checklist
+
+Have an already invited designer use their own Microsoft tunnel session and Smartsheet account. Do not share credentials or count an agent switching fictional roles as this test.
+
+1. The coordinator selects one of the explicitly allowlisted synthetic jobs and offers it to that tester through the existing job controls. This is a real DEV source change; it makes older AI contexts stale. No email is sent by the pilot.
+2. The tester opens their offered job and prepares a fresh AI context. They can import a draft while an offer is pending, but cannot accept/reject the brief until existing job edit policy permits it.
+3. The tester explicitly accepts the job if participating in this test, then prepares a fresh context after that source change. Have their Codex agent save a draft and verify the authorized brief-review step.
+4. Try a known permitted-by-coordinator job belonging to another designer through a direct link; the tester must not receive its job, context, reference or draft payloads.
+5. Verify persistence after reload, then sign out and confirm their session can no longer read the saved context/draft. Retain all synthetic jobs, files and analysis history.
+6. Record the tester's own observed result and any blocked step. Keep personal details and private evidence outside the public repository.
+
+Only after this and the coordinator's live pass should the two-real-user Stage 1 exit gate be marked complete. Stage 2 remains a separate reviewable implementation for authenticated programmatic/MCP access.

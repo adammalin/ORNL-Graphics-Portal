@@ -40,13 +40,14 @@ export async function mount({root,job,csrf}) {
     state=await request('/ai');if(!root.isConnected)return;
     if(!state.enabled){root.innerHTML='<h2>AI project brief</h2><p>This job is outside the selected AI pilot. Its existing workflow is unchanged.</p>';return;}
     draft=state.latestDraft;history.push(...state.history);historyPage=10;
-    root.innerHTML=`<h2>AI project brief <span class="planned-label">Agent-assisted DEV pilot</span></h2><p>Prepare the job context, use your Codex agent to analyze it, and save a draft for review. This pilot does not run a model or edit Smartsheet fields automatically.</p><div class="notice" role="status" data-testid="operation-status">Ready for an agent. Job ${e(job.id)}.</div><div data-ai-accepted></div>
+    root.inert=true;root.setAttribute('aria-busy','true');
+    root.innerHTML=`<h2>AI project brief <span class="planned-label">Agent-assisted DEV pilot</span></h2><p>Prepare the job context, use your Codex agent to analyze it, and save a draft for review. This pilot does not run a model or edit Smartsheet fields automatically.</p><div class="notice" role="status" data-testid="operation-status">Loading saved context and reference inventory…</div><div data-ai-accepted></div>
     <details open><summary>1. Prepare job context</summary><p>All permitted request fields are included, including notes in Additional Details. Select reference files to read. Text and text-based PDFs are supported; images, external links and unreadable files are reported as incomplete coverage.</p><div data-ai-references></div><button class="button button-small" data-ai-action="prepare" data-testid="ai-prepare-context">Prepare job context</button><div data-ai-context></div></details>
     <details><summary>2. Import an AI draft</summary><p>Paste the analysis JSON produced by your authorized agent. Evidence quotes, coverage and proposals are validated before saving. Maximum 256 KiB.</p><form data-ai-import><div class="field"><label for="ai-import-json">AI analysis JSON</label><textarea id="ai-import-json" data-testid="ai-import-json" rows="12" required spellcheck="false"></textarea></div><button class="button button-primary button-small" type="submit" data-testid="ai-save-draft" ${state.canSaveDraft?'':'disabled'}>Validate and save draft</button></form></details>
     <details open><summary>3. Review the saved draft</summary><div data-ai-history></div><div data-ai-draft></div></details>`;
     renderDraft();renderAccepted();renderHistory();await loadRefs();
     if(state.latestContextId){packet=await request('/intake-contexts/'+encodeURIComponent(state.latestContextId));renderPacket();}
-  }catch(error){root.innerHTML=`<h2>AI project brief</h2><p class="notice notice-warning" role="status">${e(error.message)}</p>`;return;}
+  }catch(error){root.inert=false;root.removeAttribute('aria-busy');root.innerHTML=`<h2>AI project brief</h2><p class="notice notice-warning" role="status">${e(error.message)}</p>`;return;}
   async function run(action,payload,task){if(waiting)return;waiting=true;
     const encoded=typeof payload==='string'?payload:JSON.stringify(payload);
     if(!operation||operation.action!==action||operation.payload!==encoded||operation.confirmed)operation={action,payload:encoded,key:crypto.randomUUID(),confirmed:false};
@@ -68,4 +69,5 @@ export async function mount({root,job,csrf}) {
   });
   root.addEventListener('change',async event=>{if(event.target.id==='ai-history'&&event.target.value)await run('history-read',event.target.value,async()=>{draft=await request('/ai-drafts/'+encodeURIComponent(event.target.value));renderDraft();status('Saved version loaded.');});});
   root.querySelector('[data-ai-import]').addEventListener('submit',async event=>{event.preventDefault();const raw=root.querySelector('#ai-import-json').value;if(new TextEncoder().encode(raw).length>256*1024){status('AI JSON exceeds 256 KiB.',true);return;}await run('import',raw,async key=>{status('Validating evidence and saving the draft…');draft=await request('/ai-drafts',{method:'POST',raw:true,body:raw,key});const savedId=draft.draftId;await refresh();root.querySelector('#ai-import-json').value='';status('Draft saved: '+savedId+'. Review it below. No job fields changed.');});});
+  root.inert=false;root.removeAttribute('aria-busy');status('Ready for an agent. Job '+job.id+'.');
 }

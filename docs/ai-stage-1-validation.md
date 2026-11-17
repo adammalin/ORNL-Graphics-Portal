@@ -10,7 +10,7 @@ November 17, 2026. Implementation and qualification are separate from enabling u
 - JSON Schema plus semantic evidence/coverage/blank-field/date/question validation. Imported content renders as inert escaped text.
 - Immutable draft versions, append-only reviews, accepted-brief display, stale-source detection and paginated history. No native business-field apply.
 - Per-user/action operation receipts; exact session/source/job authorization shared with existing job behavior; configuration defaults off and requires explicit synthetic job IDs.
-- Additive private migration 2. The supported isolated Python 3.12/OpenSSL environment leaves the old running environment intact until restart.
+- Additive private migration 2. The live pilot uses the supported isolated Python 3.12/OpenSSL environment; the original environment is preserved.
 
 ## Automated and isolated browser evidence
 
@@ -28,9 +28,13 @@ The existing authenticated laptop pilot was reached as the coordinator. Two new,
 
 The private config/state were backed up before preparing AI settings. Only those two job IDs are selected in private configuration. Microsoft intake remains off. The backend was restarted with local secret entry and the user completed Smartsheet consent. The complete-request live context was prepared, its agent-written brief imported, and a synthetic sidecar review recorded under the coordinator session. The original native date/deliverables remain unapplied. No secret was read from process/browser memory or copied into source.
 
-The live reference test exposed a real Smartsheet media type of text/plain;charset=UTF-8. The original classifier conservatively reported unsupported rather than claiming it had read the file. Media-type parameter/case normalization was added, extraction version advanced to 1.0.1, and a regression test added. The corrected parser is awaiting the final controlled restart/live reference retest. Existing historical contexts/drafts are retained; a changed extraction version requires a fresh context.
+The live reference test exposed a real Smartsheet media type of text/plain;charset=UTF-8. The original classifier conservatively reported unsupported rather than claiming it had read the file. Media-type parameter/case normalization was added, extraction version advanced to 1.0.1, and a regression test added. After the user restarted and reconnected, the actual attachment was extracted successfully. Its audience, artwork constraints and deliverables were included in an agent-written draft; exactly one draft customer question asked for the missing printed dimensions. All four context sources were accounted for, with no unread sources. The source's embedded malicious instruction was treated as untrusted test data and was not followed.
 
-**Pending:** corrected live reference extraction/import/readback and final reload verification; a second real user's permitted/denied analysis journey. The Stage 1 exit gate is not complete until two real users have completed the scoped browser workflow. Automated roles are not counted as real users.
+The complete-request case was also refreshed under extractor 1.0.1, imported and reviewed in the portal. It produced zero customer questions and evidence-backed date/deliverables proposals. Its prior context/draft remain in history. Both live jobs retained their original native source revisions, and the intentionally blank requested-date/deliverables fields stayed blank. Reload/navigation readback confirmed saved analysis and current context; the poster draft remains awaiting review. Review of the complete case was an agent-executed synthetic test in the coordinator session, not independent human attestation.
+
+A live UI timing issue was corrected: context/reference loading now keeps the panel busy and inert until action handlers are ready. The corrected panel was exercised on the live poster reload and complete-request import/review. Syntax and brand/configuration checks passed after this frontend change.
+
+**Pending:** a second real user's permitted/denied analysis journey. Live concurrent source edits, live attachment replacement and mid-operation access revocation have not been separately qualified; automated tests cover these conditions. The Stage 1 exit gate is not complete until two real users have completed the scoped browser workflow. Automated roles are not counted as real users. See the [second tester checklist](ai-stage-1-browser-pilot.md#second-real-tester-checklist).
 
 No native dashboard/report/form/column/formula/workflow/sharing definitions were edited. AI outputs remain in the portal's private state, not new Smartsheet fields. MCP, bearer grants, source apply, native publication, model runner, unattended scheduling, messages, SCOUT and Dropbox remain disabled.
 

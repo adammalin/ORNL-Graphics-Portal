@@ -149,6 +149,16 @@ class AiPilotTests(PilotTestCase):
         self.assertEqual(self.save(coord,analysis).status_code,400)
         self.assertEqual(extract(b'x'*50001,'text/plain','long.txt')['status'],'truncated')
 
+    def test_real_smartsheet_media_type_parameters_are_normalized(self):
+        source=self.add_file(b'Deliverables: one print-ready PDF.','text/plain;charset=UTF-8','reference.txt')
+        coord,_=self.login('coord');context=self.context(coord,[source])
+        reference=next(s for s in context['sources'] if s['sourceId']==source)
+        self.assertEqual(reference['status'],'delivered')
+        self.assertEqual(reference['text'],'Deliverables: one print-ready PDF.')
+        self.assertEqual(context['coverage']['unreadSources'],[])
+        for mime in ['TEXT/PLAIN; charset=UTF-8',' text/plain ; charset=utf-8','application/octet-stream; charset=UTF-8']:
+            self.assertEqual(extract(b'Synthetic UTF-8 text.',mime,'reference.txt')['status'],'delivered')
+
     def test_reference_bytes_changed_without_metadata_prevents_import(self):
         source=self.add_file();coord,_=self.login('coord');context=self.context(coord,[source])
         self.files['900']=(b'Changed reference bytes','text/plain','reference.txt')

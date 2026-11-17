@@ -7,12 +7,15 @@ import subprocess
 import sys
 
 LIMIT = 50000
-VERSION = 'bounded-text-pdf-1.0'
+VERSION = 'bounded-text-pdf-1.0.1'
 
 
 def extract(content, mime, name):
     digest = hashlib.sha256(content).hexdigest()
     result = {'contentHash': digest, 'extractorVersion': VERSION, 'status': 'unsupported', 'text': ''}
+    # Smartsheet returns media-type parameters on real attachments, e.g.
+    # text/plain;charset=UTF-8. Parameters do not change the media type.
+    mime = str(mime).partition(';')[0].strip().lower()
     # Octet-stream is accepted only with .txt plus strict UTF-8/control checks,
     # or an actual PDF signature and .pdf. File content is always inert text.
     plain = mime == 'text/plain' or (mime == 'application/octet-stream' and name.lower().endswith('.txt'))
@@ -30,7 +33,7 @@ def extract(content, mime, name):
     elif pdf:
         try:
             reply = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--pdf'],
-                input=content, capture_output=True, timeout=9, check=False)
+                input=content, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=9, check=False)
             if reply.returncode == 0 and len(reply.stdout) <= 400000:
                 data = json.loads(reply.stdout)
                 if data.get('status') in ('delivered', 'truncated', 'unsupported') and isinstance(data.get('text'), str) and len(data['text']) <= LIMIT:

@@ -14,9 +14,9 @@ November 17, 2026. Implementation and qualification are separate from enabling u
 
 ## Automated and isolated browser evidence
 
-Full suite: **5 JavaScript + 76 Python tests = 81 tests passed**. Syntax, public demo configuration, ORNL palette/credential scans, launcher shell syntax and diff whitespace checks passed.
+Full suite: **5 JavaScript + 77 Python tests = 82 tests passed**. Syntax, public demo configuration, ORNL palette/credential scans, launcher shell syntax and diff whitespace checks passed.
 
-The 21 Stage 1 tests cover complete request/date in notes, material missing dimensions, conflicting dates, octet-stream text, unsupported image and truncation, changed reference bytes without changed metadata, fabricated evidence/source IDs, duplicate issues, populated-field preservation, unsupported fields, relative dates, malicious source instructions, sidecar review/idempotency, stale import/acceptance, cross-user and cross-job reads, viewer/offered-designer restrictions, expiry during preflight, strict raw JSON/size/Origin/CSRF/method checks, persistence failure rollback, text/blank/invalid PDFs and complete-inventory pagination/limits.
+The 22 Stage 1 tests cover complete request/date in notes, material missing dimensions, conflicting dates, octet-stream text, unsupported image and truncation, changed reference bytes without changed metadata, fabricated evidence/source IDs, duplicate issues, populated-field preservation, unsupported fields, relative dates, malicious source instructions, sidecar review/idempotency, stale import/acceptance, cross-user and cross-job reads, viewer/offered-designer restrictions, expiry during preflight, strict raw JSON/size/Origin/CSRF/method checks, persistence failure rollback, text/blank/invalid PDFs and complete-inventory pagination/limits.
 
 Isolated browser testing used only fictional API transports on loopback port 4186. Verified selecting/extracting a text reference, preparing/readable context, importing an agent-written complete-request draft, displaying proposed date/deliverables with exact quotes, zero unnecessary questions, separate accepted-brief review, persistence after reload and unchanged native date/deliverables. The test-only sign-in bootstrap was confined to an ignored local fixture and the fixture was stopped afterward.
 
@@ -26,9 +26,11 @@ Matching quotes and coverage declarations establish traceability; they do not pr
 
 The existing authenticated laptop pilot was reached as the coordinator. Two new, explicitly synthetic DEV requests were created through its existing intake UI: a complete flyer request with a requested date only in notes, and a poster with missing printed dimensions plus an uploaded synthetic text reference. The second request's title, combined notes and attachment were read back through its live job page.
 
-The private config/state were backed up before preparing AI settings. Only those two job IDs are selected in private configuration. Microsoft intake remains off. The original backend process requires a controlled restart and local app-secret entry to load Stage 1. No secret was read from process/browser memory or copied into source.
+The private config/state were backed up before preparing AI settings. Only those two job IDs are selected in private configuration. Microsoft intake remains off. The backend was restarted with local secret entry and the user completed Smartsheet consent. The complete-request live context was prepared, its agent-written brief imported, and a synthetic sidecar review recorded under the coordinator session. The original native date/deliverables remain unapplied. No secret was read from process/browser memory or copied into source.
 
-**Pending:** live Stage 1 context/extraction/import/readback after restart; actual fresh-session behavior; a second real user's permitted/denied analysis journey. The Stage 1 exit gate is not complete until two real users have completed the scoped browser workflow. Automated roles are not counted as real users.
+The live reference test exposed a real Smartsheet media type of text/plain;charset=UTF-8. The original classifier conservatively reported unsupported rather than claiming it had read the file. Media-type parameter/case normalization was added, extraction version advanced to 1.0.1, and a regression test added. The corrected parser is awaiting the final controlled restart/live reference retest. Existing historical contexts/drafts are retained; a changed extraction version requires a fresh context.
+
+**Pending:** corrected live reference extraction/import/readback and final reload verification; a second real user's permitted/denied analysis journey. The Stage 1 exit gate is not complete until two real users have completed the scoped browser workflow. Automated roles are not counted as real users.
 
 No native dashboard/report/form/column/formula/workflow/sharing definitions were edited. AI outputs remain in the portal's private state, not new Smartsheet fields. MCP, bearer grants, source apply, native publication, model runner, unattended scheduling, messages, SCOUT and Dropbox remain disabled.
 

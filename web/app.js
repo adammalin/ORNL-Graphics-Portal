@@ -62,7 +62,7 @@ function card(p) {
     ${copiedLabel(p)}<h3><a href="#/projects/${encodeURIComponent(p.id)}">${e(p.title)}</a></h3><p class="card-type">${e(p.taskType || 'Type not specified')}</p>
     <div class="card-meta"><span class="${due !== null && due < 0 && isActive(p)?'overdue':''}">${icon('calendar')}${e(p.dueDate ? formatDate(p.dueDate).replace(/, \d{4}$/,'') : 'Date not set')}</span><span>${icon('clock')}${e(hoursLabel(p))}</span></div>
     ${files || p.references?.length ? `<a class="card-reference" href="#/projects/${encodeURIComponent(p.id)}/references">${icon('file')}${files ? `${files} reference file${files===1?'':'s'}` : ''}${files && p.references?.length?' · ':''}${p.references?.length ? `${p.references.length} link${p.references.length===1?'':'s'}` : ''}</a>` : ''}
-    <div class="card-footer"><span class="person">${designer?avatar(designer):''}${e(designer?personName(designer):p.requestedDesigner?`Offered to ${personName(p.requestedDesigner).split(' ')[0]}`:'Unassigned')}</span><a class="card-link" href="#/projects/${encodeURIComponent(p.id)}">View job →</a></div>
+    <div class="card-footer"><span class="person">${designer?avatar(designer):''}${e(designer?personName(designer):p.requestedDesigner?(p.readOnly?`Requested: ${personName(p.requestedDesigner)}`:`Offered to ${personName(p.requestedDesigner).split(' ')[0]}`):'Unassigned')}</span><a class="card-link" href="#/projects/${encodeURIComponent(p.id)}">View job →</a></div>
   </article>`;
 }
 function offersForCurrent() { return state.projects.filter(p => !p.readOnly && isActive(p) && p.requestedDesigner === state.person && !['accepted','declined'].includes(p.response)); }

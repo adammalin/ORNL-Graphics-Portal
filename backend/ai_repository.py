@@ -9,7 +9,7 @@ except ImportError:
     from dev_store import WriteError
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MIGRATIONS = (
     (1, (
         """CREATE TABLE ai_intake_contexts (
@@ -42,6 +42,17 @@ MIGRATIONS = (
             selection_json TEXT NOT NULL
         )""",
         'CREATE INDEX ai_context_job ON ai_intake_contexts(sheet_id, row_id)',
+    )),
+    (2, (
+        '''CREATE TABLE ai_operations (
+            sheet_id TEXT NOT NULL, user_id TEXT NOT NULL,
+            action TEXT NOT NULL, operation_key TEXT NOT NULL,
+            payload_hash TEXT NOT NULL, result_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(sheet_id, user_id, action, operation_key)
+        )''',
+        'CREATE INDEX ai_drafts_context ON ai_analysis_drafts(context_id, version)',
+        'CREATE INDEX ai_reviews_draft ON ai_draft_reviews(draft_id, reviewed_at)',
     )),
 )
 

@@ -232,7 +232,8 @@ class JobService:
                 'canCreate': self._writable(context),
                 'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),
                 'jobActionsAreScoped': True,
-                'features': {name: False for name in FEATURE_NAMES},
+                'features': {**{name: False for name in FEATURE_NAMES},
+                             **self.runtime.ai.flags()},
                 'limits': {'attachmentBytes': MAX_FILE_BYTES},
                 'constraints': {'deletion': False, 'sharedTokenFallback': False},
             }

@@ -29,7 +29,7 @@ class PrivateMigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT * FROM bindings').fetchall(), [('tester@example.org', '123')])
             self.assertEqual(db.execute('SELECT * FROM operations').fetchall(),
                              [('123', 'existing-receipt', 'done', '{"jobId":"SYNTHETIC"}')])
-            self.assertEqual(db.execute('SELECT version FROM portal_schema_migrations').fetchall(), [(1,)])
+            self.assertEqual(db.execute('SELECT version FROM portal_schema_migrations').fetchall(), [(1,), (2,)])
             for table in ['ai_intake_contexts', 'ai_analysis_drafts', 'ai_draft_reviews']:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0], 0)
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)

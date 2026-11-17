@@ -64,3 +64,5 @@ Set Settings → Pages → Source to **GitHub Actions**. Merging into `main` run
 See [architecture and access](docs/architecture.md), [scope and preservation](docs/scope.md) and [brand / content inventory](docs/design.md). Production employee authentication, role authorization, hosted credential storage and production write qualification still require implementation and validation. No present demo role or client-side filter establishes production access control.
 
 [Microsoft employee intake implementation and IT setup](docs/microsoft-requester-intake.md) separates organization sign-in and create-only submission from the designers’ personal Smartsheet sessions. It is disabled until privately configured and does not advance AI Stage 1.
+
+[Stage 1 browser-agent AI pilot](docs/ai-stage-1-browser-pilot.md) adds selected-job context export, validated external draft import and private brief review. It needs no Smartsheet AI, Microsoft intake or portal model key; native field apply, MCP and scheduling remain disabled.

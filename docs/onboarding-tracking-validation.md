@@ -4,7 +4,7 @@ November 17, 2026. These are separate capabilities: staff tutorials can run with
 
 ## Automated qualification
 
-The complete suite passes: **8 JavaScript + 110 Python tests = 118 tests**. JavaScript syntax, public configuration, ORNL style/credential scans and diff whitespace checks pass. Tests cover first-show concurrency and persistence; per-identity preferences; origin/CSRF/size/role validation; immutable original-request snapshots; permanent row binding; same-email/different-object ownership denial; source revocation; copied-row exclusion; paused-write tracking reads; file content changes; staff grants/revocation and unchanged native-write counts.
+The complete suite passes: **8 JavaScript + 110 Python tests = 118 tests**. GitHub validation run [44181939793](https://github.com/adammalin/ORNL-Graphics-Portal/actions/runs/44181939793) passed for the implementation commit; deployment was skipped. JavaScript syntax, public configuration, ORNL style/credential scans and diff whitespace checks pass. Tests cover first-show concurrency and persistence; per-identity preferences; origin/CSRF/size/role validation; immutable original-request snapshots; permanent row binding; same-email/different-object ownership denial; source revocation; copied-row exclusion; paused-write tracking reads; file content changes; staff grants/revocation and unchanged native-write counts.
 
 ## Isolated browser qualification
 

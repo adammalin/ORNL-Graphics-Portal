@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "contextId": "ctx_SYNTHETIC_ONLY_001",
+  "inputFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "projectBrief": "Create a one-page, letter-size flyer inviting scientists to a fictional open house, using the supplied final text. Deliver one PDF and one editable source file by December 4, 2026. The date is supplied in the notes even though the structured requested-date field is blank. No material clarification is identified in this synthetic request.",
+  "proposedTasks": [
+    { "id": "task_layout", "text": "Prepare the letter-size flyer layout using the supplied final text.", "status": "proposed", "sourceIds": ["s_details"] },
+    { "id": "task_review", "text": "Review the flyer against the request before preparing deliverables.", "status": "proposed", "sourceIds": ["s_details", "s_deliverables"] },
+    { "id": "task_export", "text": "Prepare the PDF and editable source file for the requested delivery date.", "status": "proposed", "sourceIds": ["s_deliverables", "s_notes"] }
+  ],
+  "fieldProposals": [
+    {
+      "field": "requestedDueDate",
+      "value": "2026-12-04",
+      "rationale": "The structured date is blank, but the notes state an unambiguous requested date.",
+      "evidence": [{ "sourceId": "s_notes", "quote": "Please deliver by December 4, 2026." }]
+    }
+  ],
+  "missingInformation": [],
+  "conflicts": [],
+  "questionsForCustomer": [],
+  "coverage": {
+    "reviewedSourceIds": ["s_title", "s_details", "s_notes", "s_category", "s_deliverables"],
+    "unreadSources": []
+  }
+}

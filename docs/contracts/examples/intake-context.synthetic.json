@@ -1,0 +1,110 @@
+{
+  "fixtureOnly": true,
+  "schemaVersion": "1.0",
+  "contextId": "ctx_SYNTHETIC_ONLY_001",
+  "jobId": "DEMO-AI-001",
+  "sourceRevision": "1111111111111111111111111111111111111111111111111111111111111111",
+  "inputFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "preparedAt": "2026-11-17T18:00:00Z",
+  "sourceTimeZone": "America/New_York",
+  "policyVersion": "proposed-1.0",
+  "promptVersion": "intake-analysis-1.0",
+  "fields": {
+    "title": "Fictional science open-house flyer",
+    "description": "Create a one-page letter-size flyer inviting scientists to a fictional open house. Approved copy: Fictional Science Open House; December 11, 2026, 10 a.m.; Fictional Auditorium. Use plain type and simple geometric shapes. No photos or additional references are needed. Deliver a PDF and editable source.",
+    "notes": "Please deliver by December 4, 2026.",
+    "requestedDueDate": "",
+    "taskType": [
+      "Fact sheet / Flyer / Handout"
+    ],
+    "deliverables": "One flyer PDF and one editable source file."
+  },
+  "sources": [
+    {
+      "sourceId": "s_title",
+      "kind": "field",
+      "label": "Description / job title",
+      "version": "fixture-v1",
+      "text": "Fictional science open-house flyer"
+    },
+    {
+      "sourceId": "s_details",
+      "kind": "field",
+      "label": "Additional Details",
+      "version": "fixture-v1",
+      "text": "Create a one-page letter-size flyer inviting scientists to a fictional open house. Approved copy: Fictional Science Open House; December 11, 2026, 10 a.m.; Fictional Auditorium. Use plain type and simple geometric shapes. No photos or additional references are needed. Deliver a PDF and editable source."
+    },
+    {
+      "sourceId": "s_notes",
+      "kind": "field",
+      "label": "Notes / additional details",
+      "version": "fixture-v1",
+      "text": "Please deliver by December 4, 2026."
+    },
+    {
+      "sourceId": "s_category",
+      "kind": "field",
+      "label": "Task Type",
+      "version": "fixture-v1",
+      "text": "Fact sheet / Flyer / Handout"
+    },
+    {
+      "sourceId": "s_deliverables",
+      "kind": "field",
+      "label": "Deliverables and Quantities",
+      "version": "fixture-v1",
+      "text": "One flyer PDF and one editable source file."
+    }
+  ],
+  "coverage": {
+    "unreadSources": []
+  },
+  "allowedFieldProposals": [
+    "requestedDueDate",
+    "taskType",
+    "deliverables"
+  ],
+  "fieldDefinitions": {
+    "requestedDueDate": {
+      "sourceColumn": "Due Date",
+      "type": "date",
+      "isBlank": true,
+      "aiProposable": true
+    },
+    "taskType": {
+      "sourceColumn": "Task Type",
+      "type": "multi_picklist",
+      "isBlank": false,
+      "aiProposable": true,
+      "options": [
+        "Fact sheet / Flyer / Handout",
+        "Other"
+      ]
+    },
+    "deliverables": {
+      "sourceColumn": "Deliverables and Quantities",
+      "type": "text",
+      "isBlank": false,
+      "aiProposable": true
+    },
+    "title": {
+      "sourceColumn": "Description",
+      "type": "text",
+      "isBlank": false,
+      "aiProposable": false
+    },
+    "description": {
+      "sourceColumn": "Additional Details",
+      "type": "text",
+      "isBlank": false,
+      "aiProposable": false
+    },
+    "notes": {
+      "sourceColumn": "Additional Details",
+      "sourceSection": "Notes / additional details",
+      "type": "text",
+      "isBlank": false,
+      "aiProposable": false
+    }
+  }
+}

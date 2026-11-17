@@ -49,6 +49,10 @@ Enter the token at the hidden prompt. It stays in process memory, is never writt
 
 For **DEV saves**, run `./start-dev.command` using the private `.local/dev-config.json`. The editor defaults to port 4174 and discovers synthetic requests through the existing, validated DEV-only filter. See [local DEV setup, field mapping and safeguards](docs/local-dev.md). The public Pages configuration remains demo-only.
 
+## AI and agent implementation plan
+
+The [detailed implementation specification](docs/ai-agent-implementation-spec.md) starts with users' existing Codex/browser agents, followed by scoped API/MCP tools. Smartsheet AI and a central model API key are not prerequisites for that agent-assisted path. It defines shared authorization, job context, reviewable briefs and field proposals, reference coverage, contracts, acceptance tests and a separate later phase for unattended processing. The linked schema, fictional example and prompt are design artifacts; they do not enable these features.
+
 ## GitHub Pages
 
 Set Settings → Pages → Source to **GitHub Actions**. Merging into `main` runs checks and deploys the static `web/` folder. Relative asset URLs and hash routes work under `/ORNL-Graphics-Portal/` without a rewrite service.

@@ -66,3 +66,5 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 [Microsoft employee intake implementation and IT setup](docs/microsoft-requester-intake.md) separates organization sign-in and create-only submission from the designers’ personal Smartsheet sessions. It is disabled until privately configured and does not advance AI Stage 1.
 
 [Stage 1 browser-agent AI pilot](docs/ai-stage-1-browser-pilot.md) adds selected-job context export, validated external draft import and private brief review. It needs no Smartsheet AI, Microsoft intake or portal model key; native field apply, MCP and scheduling remain disabled.
+
+[Laptop demo startup guide](docs/demo-startup.md): save the Smartsheet App secret once with `save-pilot-credentials.command`, then use `start-pilot.command` for automatic local Keychain retrieval. Includes the Developer Tools location, tunnel/server steps and an explanation of repeated consent. [Launcher validation](docs/demo-startup-validation.md) records the tested boundaries.

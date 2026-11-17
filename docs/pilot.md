@@ -39,7 +39,11 @@ Create a private, permission-600 `.local/pilot-config.json`; never commit it. Ex
 }
 ```
 
-Start `./start-pilot.command` locally and enter the app secret at its hidden prompt. It is held in process memory, never saved in the configuration or sent to the browser. If `clientId` is omitted from the private config, the launcher asks for it first. Do not paste secrets into chat, shell arguments, URLs, source files, screenshots or GitHub settings. The app secret is unrelated to a personal Smartsheet API token.
+On macOS, run `./save-pilot-credentials.command` once to save the existing App secret in the login Keychain using a hidden prompt. Find it in Smartsheet: **Account > Developer Tools > ORNL Graphics Portal - DEV Pilot > View/Edit**. It can be looked up again; creating a new app or regenerating the secret is not necessary just because it was not saved earlier. The public App client ID is already in private config; if missing, setup asks once and saves only that identifier there.
+
+Then start `./start-pilot.command`. It retrieves the matching secret from Keychain automatically and keeps it in server memory. A missing item starts explicit one-time setup; a locked/denied Keychain fails closed without replacing anything. macOS may ask permission for the Python interpreter to access the item. The secret is never put in arguments, environment variables, plaintext config, browser output or logs. `./save-pilot-credentials.command` also replaces the saved value after an intentional secret rotation. Do not paste secrets into chat, source files, screenshots or GitHub settings. The App secret is unrelated to a personal Smartsheet API token.
+
+For memory-only entry instead, use `./start-pilot.command --secret-source prompt`; this does not save the secret. Other platforms default to memory-only entry. See the [demo startup guide](demo-startup.md).
 
 Before enabling saves, inspect **all** workflows in the native DEV sheet UI. Smartsheet's automation API does not return multistep workflows, so the API check alone cannot establish that all actions are disabled. Preserve workflow definitions; if anything is active or uncertain, leave pilot saves disabled. Record a completed review with:
 
@@ -84,9 +88,9 @@ Keep the outer tunnel authenticated. A tenant access rule admits the Microsoft o
 
 ## Stop or restart
 
-Keep two Terminal windows open when running the pilot yourself: `./start-pilot-tunnel.command` hosts the existing tunnel, and `./start-pilot.command` starts the backend with its hidden secret prompt. The tunnel helper needs `tunnelId` in the private config. Do not start a second host while the existing one is running.
+Keep two Terminal windows open when running the pilot yourself: `./start-pilot-tunnel.command` hosts the existing tunnel, and `./start-pilot.command` starts the backend using Keychain on macOS. The tunnel helper needs `tunnelId` in the private config. Do not start a second host while the existing one is running. The backend launcher checks its port before accessing credentials and explains how to reuse or stop an existing process.
 
-Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. Stop the tunnel host as well when testing is over. Retain the private SQLite file and configuration; enter the secret again on restart. Review native workflows again before re-enabling writes after the review expires. The laptop must stay awake, online and connected as required for the pilot link to work.
+Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. Stop the tunnel host as well when testing is over. Retain the private SQLite file, configuration and Keychain item; the launcher retrieves the saved App secret on restart. This does not persist user OAuth sessions: users reconnect and can see Smartsheet consent on each fresh authorization, including after restart, explicit sign-out, idle expiry or maximum session expiry. Normal navigation/refresh in a valid session does not reauthorize. Secure per-user token/session persistence and refresh would be a separate change, not part of saving the App secret. Review native workflows again before re-enabling writes after the review expires. The laptop must stay awake, online and connected as required for the pilot link to work.
 
 ## References
 

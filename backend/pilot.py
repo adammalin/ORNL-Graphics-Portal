@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
+import socket
 import sys
 import threading
 import time
@@ -32,6 +33,7 @@ try:
     from backend import microsoft_intake as employee_intake
     from backend.ai_service import AiService, settings as ai_settings
     from backend.ai_validation import strict_json
+    from backend.pilot_credentials import CredentialError, client_id_from_config, load_secret
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
     from dev_store import WriteError
@@ -41,6 +43,7 @@ except ImportError:
     import microsoft_intake as employee_intake
     from ai_service import AiService, settings as ai_settings
     from ai_validation import strict_json
+    from pilot_credentials import CredentialError, client_id_from_config, load_secret
 
 SESSION_COOKIE = '__Host-graphics_pilot'
 LOGIN_COOKIE = '__Host-graphics_login'
@@ -560,10 +563,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',default='.local/pilot-config.json')
     parser.add_argument('--port',type=int,default=4175)
+    parser.add_argument('--secret-source', choices=('keychain', 'prompt'),
+                        default='keychain' if sys.platform == 'darwin' else 'prompt')
     args = parser.parse_args()
+    try:
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', args.port))
+    except OSError:
+        raise WriteError('Port '+str(args.port)+' is already in use. Reuse the existing pilot Terminal, or stop it with Ctrl+C before starting another server.', 503) from None
     path = Path(args.config).resolve()
-    initial = json.loads(path.read_text())
-    client_id = initial.get('clientId') or input('Smartsheet OAuth app client ID: ').strip()
+    client_id = client_id_from_config(path)
     def load():
         value = json.loads(path.read_text())
         value['clientId'] = value.get('clientId') or client_id
@@ -573,13 +582,7 @@ def main():
         import ssl
         if sys.version_info < (3, 10) or not ssl.OPENSSL_VERSION.startswith('OpenSSL '):
             raise WriteError('Microsoft intake requires Python 3.10+ with OpenSSL. Prepare the supported pilot environment before entering secrets; Python 3.12 is recommended.', 503)
-    print('Copy the App secret from Smartsheet, paste it at the next prompt, then press Return.',flush=True)
-    print('No characters or dots will appear while you paste/type. Ctrl+C cancels.',flush=True)
-    secret = ''
-    while not secret.strip():
-        secret = getpass.getpass('Smartsheet OAuth app secret (hidden; memory only): ')
-        if not secret.strip():
-            print('No secret received. Paste the App secret, then press Return. Nothing has started yet.',flush=True)
+    secret = load_secret(client_id, args.secret_source)
     microsoft_secret = intake_token = None
     if employee_intake.settings(config):
         for label in ('Microsoft intake app secret', 'Approved intake integration Smartsheet token'):
@@ -595,6 +598,10 @@ def main():
     from waitress import serve
     print('Authenticated pilot ready behind '+config.origin,flush=True)
     print('Loopback backend: http://127.0.0.1:'+str(args.port),flush=True)
+    print('Keep this Terminal and the tunnel Terminal open. Ctrl+C stops this server.',flush=True)
+    print('Pilot expires: '+datetime.fromtimestamp(config.expires).astimezone().isoformat(),flush=True)
+    if not config.writes or not config.workflow_review_valid():
+        print('DEV saves are paused until the configured write gate and native workflow review are valid.',flush=True)
     print('Designer sessions have no API-token fallback. OAuth tokens expire with the in-memory session.',flush=True)
     # Only this process owns the per-sheet lock. Start one pilot process, not replicas.
     serve(app,host='127.0.0.1',port=args.port,threads=6,connection_limit=40,channel_timeout=60,max_request_body_size=MAX_FILE_BYTES,clear_untrusted_proxy_headers=True)
@@ -602,5 +609,5 @@ def main():
 
 if __name__=='__main__':
     try:main()
-    except (WriteError,GatewayError,FileNotFoundError,ValueError) as error:
+    except (WriteError,GatewayError,FileNotFoundError,ValueError,CredentialError) as error:
         print(str(error),file=sys.stderr);sys.exit(1)

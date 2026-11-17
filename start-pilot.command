@@ -13,4 +13,4 @@ if [[ ! -f .local/pilot-config.json ]]; then
   print 'Configure .local/pilot-config.json first. See docs/pilot.md.'
   exit 1
 fi
-exec "$pilot_python" -m backend.pilot --config .local/pilot-config.json --port 4175
+exec "$pilot_python" -m backend.pilot --config .local/pilot-config.json --port 4175 "$@"

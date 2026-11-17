@@ -15,7 +15,7 @@ The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backen
 
 ## Try the prototype
 
-- Employee intake: `#/new`. No Graphics membership is required to try the synthetic demo. Live employee submission still needs ORNL-approved authentication and a secure submission endpoint.
+- Employee intake: `#/new`. No Graphics membership is required to try the synthetic demo. The separate [Microsoft employee intake](docs/microsoft-requester-intake.md) implements `/request` without requiring employee Smartsheet accounts; live activation awaits IT registration and an approved integration connection.
 - Designer offers: preview Alex Rivera, open the sample seminar poster, and accept it. It then appears in My Work.
 - Kanban / list: search, filter and drag your assigned cards, or use the job's keyboard-accessible stage selector.
 - Job details: `#/projects/DEMO-1046`. Each job has its own URL, description, tasks/deliverables, metadata, reference files and links. No shared dashboard selection log is used.
@@ -62,3 +62,5 @@ Set Settings → Pages → Source to **GitHub Actions**. Merging into `main` run
 ## Before live service
 
 See [architecture and access](docs/architecture.md), [scope and preservation](docs/scope.md) and [brand / content inventory](docs/design.md). Production employee authentication, role authorization, hosted credential storage and production write qualification still require implementation and validation. No present demo role or client-side filter establishes production access control.
+
+[Microsoft employee intake implementation and IT setup](docs/microsoft-requester-intake.md) separates organization sign-in and create-only submission from the designers’ personal Smartsheet sessions. It is disabled until privately configured and does not advance AI Stage 1.

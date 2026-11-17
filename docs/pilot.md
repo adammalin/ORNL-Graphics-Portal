@@ -67,7 +67,7 @@ The review expires after 24 hours and automatically pauses saves. Every new writ
 - The pilot expires within seven days. Removing an invite from the private config invalidates that account's next request. Roles, review freshness and the write switch reload without restarting. Changing the origin/client/source requires restart.
 - The private SQLite file retains invite-to-user bindings, creator ownership, idempotency receipts and minimal action audit entries. Preserve it across restarts to avoid repeating uncertain saves. Do not run replicas against the same sheet.
 
-The six invitees still need their own access to the DEV sheet. This pilot is not the general ORNL employee request form: production employee intake requires an approved identity service and backend deployment.
+The six invitees still need their own access to the DEV sheet. The optional [Microsoft employee intake](microsoft-requester-intake.md) supplies a separate `/request` route without employee Smartsheet accounts. It remains disabled pending IT registration and an approved integration connection; production hosting and qualification are separate.
 
 ## Verify before sharing
 
@@ -80,7 +80,7 @@ CI installs the pilot dependencies and runs the OAuth HTTP tests. A baseline Pyt
 
 Automated synthetic transports do not prove live Smartsheet OAuth or a second person's real login. Verify the actual consent callback, source read, synthetic job save, reference upload/readback and sign-out in the browser. Then have a second tester verify their own Microsoft tunnel sign-in and invited Smartsheet account. Do not label those steps complete until observed.
 
-Keep the outer tunnel authenticated. A tenant access rule admits the Microsoft organization to the tunnel boundary; the app still admits only the exact Smartsheet invite list. Confirm the intended Microsoft tenant before enabling such a rule. Do not replace it with an anonymous shared editor. Set tunnel access expiration no later than the app expiration.
+Keep the outer tunnel authenticated. A tenant access rule admits the Microsoft organization to the tunnel boundary; the designer workspace still admits only the exact Smartsheet invite list. Optional employee intake uses its own configured Microsoft eligibility policy and create-only integration service. Confirm the intended Microsoft tenant before enabling such a rule. Do not replace it with an anonymous shared editor. Set tunnel access expiration no later than the app expiration.
 
 ## Stop or restart
 

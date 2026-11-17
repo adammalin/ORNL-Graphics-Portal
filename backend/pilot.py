@@ -29,12 +29,14 @@ try:
     from backend.principals import Actor
     from backend.job_service import JobService, PilotStore
     from backend.ai_repository import migrate_private_state
+    from backend import microsoft_intake as employee_intake
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
     from dev_store import WriteError
     from principals import Actor
     from job_service import JobService, PilotStore
     from ai_repository import migrate_private_state
+    import microsoft_intake as employee_intake
 
 SESSION_COOKIE = '__Host-graphics_pilot'
 LOGIN_COOKIE = '__Host-graphics_login'
@@ -85,6 +87,7 @@ class PilotConfig:
             raise WriteError('Configure between one and twenty named pilot invites.', 503)
         self.path = Path(value.get('statePath', Path(__file__).resolve().parents[1] / '.local/pilot-state.sqlite3'))
         self.writes = value.get('writesEnabled') is True
+        employee_intake.settings(self)  # Validate optional identity configuration.
 
     def available(self):
         if time.time() >= self.expires:
@@ -283,7 +286,8 @@ class PilotRuntime:
             db.execute('INSERT INTO audit VALUES (?,?,?,?,?,?)', (datetime.now(timezone.utc).isoformat(),actor.user_id,actor.role,action,job,outcome))
 
 
-def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetReader, reload_config=None):
+def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetReader, reload_config=None,
+               microsoft_secret=None, intake_token=None, microsoft_oauth=None):
     if not secret:
         raise WriteError('Enter the OAuth app secret at the hidden local prompt.',503)
     config = config if isinstance(config,PilotConfig) else PilotConfig(config)
@@ -292,6 +296,14 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     app.config.update(MAX_CONTENT_LENGTH=MAX_FILE_BYTES,TRUSTED_HOSTS=[config.host,'127.0.0.1','localhost'])
     app.extensions['pilot'] = runtime
     app.extensions['job_service'] = runtime.jobs
+    intake = (employee_intake.IntakeService(runtime, microsoft_secret, intake_token, microsoft_oauth)
+              if employee_intake.settings(config) else None)
+    app.extensions['employee_intake'] = intake
+
+    def requester_service():
+        if intake is None:
+            raise WriteError('Employee intake is awaiting Microsoft and integration setup.', 503)
+        return intake
 
     @app.before_request
     def guards():
@@ -306,7 +318,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         if request.method in ('POST','PATCH'):
             if request.headers.get('Origin') != config.origin:
                 raise WriteError('Use the configured HTTPS pilot origin.',403)
-            s = runtime.session(request.cookies.get(SESSION_COOKIE))
+            s = (requester_service().session(request.cookies.get(employee_intake.COOKIE))
+                 if request.path.startswith('/api/intake/') or request.path == '/auth/microsoft/logout'
+                 else runtime.session(request.cookies.get(SESSION_COOKIE)))
             if not equal(request.headers.get('X-Portal-CSRF',''),s.csrf):
                 raise WriteError('Refresh the page before saving.',403)
 
@@ -335,7 +349,65 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     def login_page(message=''):
         from markupsafe import escape
-        return Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in - Graphics DEV pilot</title><link rel="stylesheet" href="/ornl-design-tokens.css"><link rel="stylesheet" href="/styles.css"></head><body><main class="pilot-login"><div class="eyebrow">Graphics Portal / invited DEV pilot</div><h1>Sign in to your workspace.</h1><p>Use the Smartsheet account invited to this pilot. Your existing sheet access and pilot role control what you can see and change.</p>'+('<div class="notice notice-warning">'+str(escape(message))+'</div>' if message else '')+'<a class="button button-primary" href="/auth/smartsheet/login">Continue with Smartsheet</a><p class="quiet-note">Smartsheet will request sheet read/write permission. This portal restricts that access to approved synthetic DEV jobs and provides no deletion operations. It is separate from the native dashboards.</p></main></body></html>',mimetype='text/html')
+        employee = ('<h1>How can we help?</h1><p>Request creative work using your organization Microsoft account. Your contact details are filled in for you.</p><a class="button button-primary" href="/auth/microsoft/login">Request creative work</a><hr><h2>Graphics workspace</h2>' if intake else '<h1>Sign in to your workspace.</h1>')
+        return Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in - Graphics DEV pilot</title><link rel="stylesheet" href="/ornl-design-tokens.css"><link rel="stylesheet" href="/styles.css"></head><body><main class="pilot-login"><div class="eyebrow">Graphics Portal / DEV pilot</div>'+employee+'<p>Designers and coordinators: use the Smartsheet account invited to this pilot.</p>'+('<div class="notice notice-warning">'+str(escape(message))+'</div>' if message else '')+'<a class="button button-primary" href="/auth/smartsheet/login">Continue with Smartsheet</a></main></body></html>',mimetype='text/html')
+
+    @app.get('/auth/microsoft/login')
+    def microsoft_login():
+        uri, browser = requester_service().begin()
+        response = redirect(uri, 303)
+        response.set_cookie(employee_intake.LOGIN_COOKIE, browser, max_age=600,
+                            secure=True, httponly=True, samesite='Lax', path='/')
+        return response
+
+    @app.get(employee_intake.CALLBACK)
+    def microsoft_callback():
+        service = requester_service()
+        sid, session = service.complete(request.args.to_dict(), request.cookies.get(employee_intake.LOGIN_COOKIE, ''))
+        service.logout(request.cookies.get(employee_intake.COOKIE))
+        response = redirect('/request', 303)
+        response.set_cookie(employee_intake.COOKIE, sid, max_age=int(session.expires-time.time()),
+                            secure=True, httponly=True, samesite='Lax', path='/')
+        response.delete_cookie(employee_intake.LOGIN_COOKIE, secure=True, httponly=True, samesite='Lax', path='/')
+        return response
+
+    @app.post('/auth/microsoft/logout')
+    def microsoft_logout():
+        requester_service().logout(request.cookies.get(employee_intake.COOKIE))
+        response = jsonify(ok=True)
+        response.delete_cookie(employee_intake.COOKIE, secure=True, httponly=True, samesite='Lax', path='/')
+        return response
+
+    @app.get('/request')
+    def requester_page():
+        service = requester_service()
+        try:
+            service.session(request.cookies.get(employee_intake.COOKIE))
+        except WriteError as error:
+            if error.status == 401:
+                return redirect('/auth/microsoft/login', 303)
+            raise
+        return send_from_directory(WEB, 'intake.html')
+
+    @app.get('/api/intake/session')
+    def requester_info():
+        return jsonify(requester_service().info(request.cookies.get(employee_intake.COOKIE)))
+
+    @app.post('/api/intake/requests')
+    def employee_create():
+        return jsonify(requester_service().create(request.cookies.get(employee_intake.COOKIE),
+            request.headers.get('Idempotency-Key', ''), request.get_json(silent=True)))
+
+    @app.get('/api/intake/requests/<receipt>')
+    def employee_receipt(receipt):
+        return jsonify(requester_service().receipt(request.cookies.get(employee_intake.COOKIE), receipt))
+
+    @app.post('/api/intake/requests/<receipt>/attachments')
+    def employee_upload(receipt):
+        from urllib.parse import unquote
+        return jsonify(requester_service().upload(request.cookies.get(employee_intake.COOKIE),
+            request.headers.get('Idempotency-Key', ''), receipt, request.headers.get('X-Project-Revision', ''),
+            unquote(request.headers.get('X-Filename', '')), request.mimetype, request.get_data(cache=False)))
 
     @app.get('/auth/smartsheet/login')
     def login():
@@ -415,13 +487,19 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         try:
             signed_in()
         except WriteError as error:
+            if intake:
+                try:
+                    intake.session(request.cookies.get(employee_intake.COOKIE))
+                    return redirect('/request', 303)
+                except WriteError:
+                    pass
             return login_page('' if error.status==401 else str(error))
         response = send_from_directory(WEB,'index.html')
         return response
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)
@@ -442,6 +520,10 @@ def main():
         value['clientId'] = value.get('clientId') or client_id
         return PilotConfig(value)
     config = load()
+    if employee_intake.settings(config):
+        import ssl
+        if sys.version_info < (3, 10) or not ssl.OPENSSL_VERSION.startswith('OpenSSL '):
+            raise WriteError('Microsoft intake requires Python 3.10+ with OpenSSL. Prepare the supported pilot environment before entering secrets; Python 3.12 is recommended.', 503)
     print('Copy the App secret from Smartsheet, paste it at the next prompt, then press Return.',flush=True)
     print('No characters or dots will appear while you paste/type. Ctrl+C cancels.',flush=True)
     secret = ''
@@ -449,11 +531,22 @@ def main():
         secret = getpass.getpass('Smartsheet OAuth app secret (hidden; memory only): ')
         if not secret.strip():
             print('No secret received. Paste the App secret, then press Return. Nothing has started yet.',flush=True)
-    app = create_app(config,secret,reload_config=load)
+    microsoft_secret = intake_token = None
+    if employee_intake.settings(config):
+        for label in ('Microsoft intake app secret', 'Approved intake integration Smartsheet token'):
+            value = ''
+            while not value.strip():
+                value = getpass.getpass(label + ' (hidden; memory only): ')
+            if microsoft_secret is None:
+                microsoft_secret = value.strip()
+            else:
+                intake_token = value.strip()
+    app = create_app(config,secret,reload_config=load,
+                     microsoft_secret=microsoft_secret,intake_token=intake_token)
     from waitress import serve
     print('Authenticated pilot ready behind '+config.origin,flush=True)
     print('Loopback backend: http://127.0.0.1:'+str(args.port),flush=True)
-    print('No API-token fallback. OAuth tokens expire with the in-memory session.',flush=True)
+    print('Designer sessions have no API-token fallback. OAuth tokens expire with the in-memory session.',flush=True)
     # Only this process owns the per-sheet lock. Start one pilot process, not replicas.
     serve(app,host='127.0.0.1',port=args.port,threads=6,connection_limit=40,channel_timeout=60,max_request_body_size=MAX_FILE_BYTES,clear_untrusted_proxy_headers=True)
 

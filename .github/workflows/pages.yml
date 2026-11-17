@@ -26,7 +26,9 @@ jobs:
           python-version: '3.12'
       - name: Validate public configuration and brand tokens
         run: npm run check
-      - name: Test workflow rules and read-only gateway boundaries
+      - name: Install pilot test dependencies
+        run: python -m pip install -r requirements-pilot.txt
+      - name: Test workflow rules, gateways and OAuth authorization
         run: npm test
 
   deploy:

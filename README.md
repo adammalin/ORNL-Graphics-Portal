@@ -9,6 +9,7 @@ A separate custom-portal proposal alongside the existing native Smartsheet dashb
 | Public GitHub Pages demo | Fictional projects and people bundled in `web/demo-data.js` | In this browser tab only; reset on reload |
 | Local DEV read-only | Explicit synthetic row IDs, or the verified native DEV-only filter | GET only |
 | Local DEV editor | Approved synthetic DEV rows plus new DEV intake | Saves intake, selected job fields, offers/responses, stages and new attachments |
+| Invited OAuth pilot | Approved synthetic DEV jobs, filtered by verified identity and server role | Per-user Smartsheet permissions; no shared-token fallback; no deletion |
 
 The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backend, include API credentials or publish DEV-sheet contents. No mode edits native dashboards, form definitions, formulas, reports, sharing or automations. DEV editing changes approved synthetic job cells and adds new rows/files; existing attachments are retained.
 
@@ -22,7 +23,7 @@ The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backen
 - Team workload: accepted active assignments and pending offers are counted separately; completed/archived jobs are excluded. Sample planning thresholds are not actual availability.
 - Completion / archiving: retain records. The demo stamps a completion date locally; it does not retrofit native sheet automation.
 
-Demo role switching is a presentation tool, **not authentication or a security boundary**. All public examples are fictional. AI, email notifications, production intake/writes, calendar access, SCOUT and Dropbox are not connected. Local DEV intake and writes are available only through the loopback editor.
+Demo role switching is a presentation tool, **not authentication or a security boundary**. All public examples are fictional. AI, email notifications, production intake/writes, calendar access, SCOUT and Dropbox are not connected. A separate [invited OAuth pilot](docs/pilot.md) adds server-enforced identity and roles behind an authenticated HTTPS tunnel. Live multi-user qualification remains distinct from its automated tests.
 
 ## Run locally
 

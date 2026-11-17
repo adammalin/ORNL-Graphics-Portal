@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ornl-graphics-portal:intake-analysis:1.0",
+  "title": "Proposed external-agent intake analysis",
+  "description": "Specification artifact only. The backend must additionally verify identity, job/context binding, source freshness, evidence, field constraints and review authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "contextId", "inputFingerprint", "projectBrief",
+    "proposedTasks", "fieldProposals", "missingInformation", "conflicts",
+    "questionsForCustomer", "coverage"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "contextId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "inputFingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "projectBrief": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "proposedTasks": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "status", "sourceIds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^task_[A-Za-z0-9_-]{1,40}$" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "status": { "const": "proposed" },
+          "sourceIds": { "$ref": "#/$defs/sourceIds" }
+        }
+      }
+    },
+    "fieldProposals": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/fieldProposal" }
+    },
+    "missingInformation": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "topic", "whyItMatters", "materiality", "reviewedSourceIds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^missing_[A-Za-z0-9_-]{1,40}$" },
+          "topic": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "whyItMatters": { "type": "string", "minLength": 1, "maxLength": 800 },
+          "materiality": { "enum": ["blocking", "helpful"] },
+          "reviewedSourceIds": { "$ref": "#/$defs/sourceIds" }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "topic", "explanation", "evidence"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^conflict_[A-Za-z0-9_-]{1,40}$" },
+          "topic": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "explanation": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "evidence": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": { "$ref": "#/$defs/evidence" }
+          }
+        }
+      }
+    },
+    "questionsForCustomer": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question", "issueIds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^question_[A-Za-z0-9_-]{1,40}$" },
+          "question": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "issueIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^(missing|conflict)_[A-Za-z0-9_-]{1,40}$" }
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewedSourceIds", "unreadSources"],
+      "properties": {
+        "reviewedSourceIds": { "$ref": "#/$defs/sourceIds" },
+        "unreadSources": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceId", "reason"],
+            "properties": {
+              "sourceId": { "$ref": "#/$defs/sourceId" },
+              "reason": {
+                "enum": [
+                  "not_selected", "unsupported", "inaccessible",
+                  "truncated", "changed", "not_delivered", "not_reviewed"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "sourceIds": {
+      "type": "array",
+      "maxItems": 60,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/sourceId" }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "quote"],
+      "properties": {
+        "sourceId": { "$ref": "#/$defs/sourceId" },
+        "quote": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "fieldProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "value", "rationale", "evidence"],
+      "properties": {
+        "field": { "enum": ["requestedDueDate", "taskType", "deliverables"] },
+        "value": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 4000 },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+            }
+          ]
+        },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "field": { "const": "requestedDueDate" } } },
+          "then": { "properties": { "value": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" } } }
+        },
+        {
+          "if": { "properties": { "field": { "const": "taskType" } } },
+          "then": { "properties": { "value": { "type": "array" } } }
+        },
+        {
+          "if": { "properties": { "field": { "const": "deliverables" } } },
+          "then": { "properties": { "value": { "type": "string" } } }
+        }
+      ]
+    }
+  }
+}

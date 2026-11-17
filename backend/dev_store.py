@@ -111,7 +111,7 @@ class DevStore:
         matches = []
         for row in self.reader.sheet['rows']:
             cells = {columns.get(c['columnId']): c for c in row.get('cells', [])}
-            if str(row['id']) in self.reader.row_ids and cells.get('DEV Test Record', {}).get('value') is True and cells.get('Graphics Req #', {}).get('value') == job_id:
+            if str(row['id']) in self.reader.row_ids and str(row['id']) not in self.reader.copied_row_ids and cells.get('DEV Test Record', {}).get('value') is True and cells.get('Graphics Req #', {}).get('value') == job_id:
                 matches.append(row)
         if len(matches) != 1:
             raise WriteError('This job is outside the approved synthetic DEV rows.', 404)

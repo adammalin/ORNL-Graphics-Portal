@@ -61,6 +61,8 @@ The review expires after 24 hours and automatically pauses saves. Every new writ
 
 ## Access and behavior
 
+Optional [copied-project preview](copied-project-preview.md) displays selected older DEV records read-only. It defaults off and uses a separate private row allowlist, without broadening the synthetic write or AI boundary.
+
 - Exact invited email addresses are matched against Smartsheet's current-user profile, including only confirmed aliases. First sign-in binds the invite to the immutable Smartsheet user ID. Unexpected identity changes require owner review.
 - A coordinator can see all synthetic DEV jobs and offer work to invited users. Only the offered designer can accept or decline. A coordinator cannot impersonate the designer's acceptance.
 - Designers see jobs offered to them plus requests they created. They can edit accepted assignments or their own still-New requests, subject to their native sheet permissions. Viewer accounts remain read-only.

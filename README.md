@@ -68,3 +68,5 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 [Stage 1 browser-agent AI pilot](docs/ai-stage-1-browser-pilot.md) adds selected-job context export, validated external draft import and private brief review. It needs no Smartsheet AI, Microsoft intake or portal model key; native field apply, MCP and scheduling remain disabled.
 
 [Laptop demo startup guide](docs/demo-startup.md): save the Smartsheet App secret once with `save-pilot-credentials.command`, then use `start-pilot.command` for automatic local Keychain retrieval. Includes the Developer Tools location, tunnel/server steps and an explanation of repeated consent. [Launcher validation](docs/demo-startup-validation.md) records the tested boundaries.
+
+[Selected copied-project preview](docs/copied-project-preview.md) adds read-only projects from the existing DEV copy alongside editable test records. A separate private row allowlist preserves the write and AI boundaries; copied projects use existing account visibility rules.

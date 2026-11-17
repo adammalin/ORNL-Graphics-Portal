@@ -66,7 +66,7 @@ def date_value(cell):
     value = str(cell.get('value') or '')
     return value[:10] if len(value) >= 10 and value[4:5] == '-' and value[7:8] == '-' else ''
 
-def normalize_sheet(sheet, sheet_id, row_ids):
+def normalize_sheet(sheet, sheet_id, row_ids, copied_row_ids=frozenset()):
     if str(sheet.get('id')) != str(sheet_id) or sheet.get('name') != 'DEV Graphics Assignments':
         raise GatewayError('The configured source is not the approved DEV Graphics Assignments sheet.')
     columns = {c['id']: c.get('title', '') for c in sheet.get('columns', [])}
@@ -74,10 +74,11 @@ def normalize_sheet(sheet, sheet_id, row_ids):
         raise GatewayError('The source does not have the DEV test marker.')
     projects, people = [], {}
     for row in sheet.get('rows', []):
-        if str(row.get('id')) not in row_ids:
+        copied = str(row.get('id')) in copied_row_ids
+        if str(row.get('id')) not in row_ids and not copied:
             continue
         cells = {columns.get(c['columnId'], ''): c for c in row.get('cells', [])}
-        if cells.get('DEV Test Record', {}).get('value') is not True:
+        if not copied and cells.get('DEV Test Record', {}).get('value') is not True:
             continue
         v = lambda title: display(cells.get(title, {}))
         job_id, title = v('Graphics Req #'), v('Description')
@@ -92,8 +93,14 @@ def normalize_sheet(sheet, sheet_id, row_ids):
         response = 'accepted' if assigned_id else 'declined' if response_text.startswith('no') else ''
         designer_id = assigned_id or offered_id
         stage = v('Project Stage')
+        source_status = v('Status') if copied else ''
         if stage not in ['New', 'Assigned', 'Accepted', 'In Progress', 'In Review', 'Completed', 'Archived']:
-            stage = 'New'
+            # View-only projection of legacy statuses; never change source cells.
+            legacy = {'designer requested': 'Assigned', 'designer accepted': 'Accepted',
+                      'completed': 'Completed', 'closed': 'Completed',
+                      'canceled': 'Archived', 'cancelled': 'Archived'}
+            stage = ('Completed' if copied and date_value(cells.get('Completed Date', {}))
+                     else legacy.get(source_status.casefold(), 'New'))
         try:
             hours = float(v('Estimated Hours')) if v('Estimated Hours') else None
             if hours is not None and (not math.isfinite(hours) or hours < 0):
@@ -114,7 +121,7 @@ def normalize_sheet(sheet, sheet_id, row_ids):
         if any(p['id'] == job_id for p in projects):
             raise GatewayError('Ambiguous DEV job identifier. No job details will be returned.')
         task_types = (cells.get('Task Type', {}).get('objectValue') or {}).get('values', [])
-        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': True, 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'requestorGroup': '', 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
+        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': not copied, 'readOnly': copied, 'sourceStatus': source_status, 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'requestorGroup': '', 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
     return projects, list(people.values())
 
 class SmartsheetReader:
@@ -122,6 +129,7 @@ class SmartsheetReader:
         self.sheet_id = require_id(sheet_id)
         self.row_ids = frozenset(require_id(r) for r in row_ids)
         self.filter_id = require_id(filter_id) if filter_id else None
+        self.copied_row_ids = frozenset()
         if not self.row_ids and not self.filter_id:
             raise GatewayError('Explicit synthetic DEV row IDs are required for this pilot.')
         if not token:
@@ -175,6 +183,23 @@ class SmartsheetReader:
                     raise GatewayError('The native filter is not restricted to DEV Test Record.')
                 self.row_ids = frozenset(str(row['id']) for row in sheet.get('rows', []) if any(c.get('columnId') == marker and c.get('value') is True for c in row.get('cells', [])))
             projects, designers = normalize_sheet(sheet, self.sheet_id, self.row_ids)
+            # The independent read selection never joins the native write allowlist.
+            if self.copied_row_ids:
+                self.row_ids = self.row_ids - self.copied_row_ids
+                selected = self._get_json(f'/sheets/{self.sheet_id}?' + urlencode({
+                    'rowIds': ','.join(sorted(self.copied_row_ids)),
+                    'include': 'attachments,objectValue', 'level': 2}), 'selected-copied-dev-rows')
+                if (selected.get('version') != sheet.get('version')
+                        or selected.get('columns') != sheet.get('columns')
+                        or selected.get('accessLevel') != sheet.get('accessLevel')):
+                    raise GatewayError('The DEV source changed while loading copied projects. Refresh before continuing.')
+                copied, copied_designers = normalize_sheet(selected, self.sheet_id, frozenset(), self.copied_row_ids)
+                projects = [p for p in projects if p['_rowId'] not in self.copied_row_ids] + copied
+                if len({p['id'] for p in projects}) != len(projects):
+                    raise GatewayError('Ambiguous DEV job identifier. No job details will be returned.')
+                designers = list({p['id']: p for p in designers + copied_designers}.values())
+                sheet = {**sheet, 'rows': [r for r in sheet['rows'] if str(r['id']) not in self.copied_row_ids]
+                         + [r for r in selected.get('rows', []) if str(r.get('id')) in self.copied_row_ids]}
             self.sheet = sheet
             self.version = sheet.get('version')
             if self.initial_version is None:
@@ -192,10 +217,10 @@ class SmartsheetReader:
         rows_path = f'/sheets/{self.sheet_id}/rows'
         is_rows = path == rows_path and method in ('POST', 'PUT') and isinstance(payload, list) and len(payload) == 1
         match = re.fullmatch(re.escape(rows_path) + r'/(\d+)/attachments', path)
-        is_upload = method == 'POST' and match and match[1] in self.row_ids and isinstance(payload, bytes)
+        is_upload = method == 'POST' and match and match[1] in self.row_ids and match[1] not in self.copied_row_ids and isinstance(payload, bytes)
         if not (is_rows or is_upload):
             raise WriteError('This operation is outside the DEV write boundary.', 403)
-        if is_rows and method == 'PUT' and str(payload[0].get('id')) not in self.row_ids:
+        if is_rows and method == 'PUT' and (str(payload[0].get('id')) not in self.row_ids or str(payload[0].get('id')) in self.copied_row_ids):
             raise WriteError('This row is outside the DEV write boundary.', 403)
         self.audit.append({'method': method, 'resource': kind})
         if self._transport:

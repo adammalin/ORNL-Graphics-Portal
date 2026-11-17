@@ -56,7 +56,9 @@ class PilotStore(DevStore):
                 'capacity': None,
             })
         data['designers'] = [d for email, d in directory.items()
-                             if email in invites or email in self.identities]
+                             if email in invites or email in self.identities or any(
+                                 p.get('readOnly') and p.get('requestedDesigner') == email
+                                 for p in self.reader._cache['projects'])]
         return data
 
     def require_writes(self):
@@ -100,6 +102,7 @@ class JobService:
 
     def _fresh(self, session_id):
         context = self._resolve(session_id)
+        context.reader.copied_row_ids = self.runtime.active_config().copied_row_ids
         context.reader.projects(force=True)
         # Reads can outlast an expiry or invite update. Revalidate before use.
         return self._resolve(session_id)
@@ -127,6 +130,8 @@ class JobService:
                     and context.reader.sheet.get('accessLevel') in WRITABLE_ACCESS)
 
     def _permissions(self, context, project):
+        if project.get('readOnly') or project.get('synthetic') is not True:
+            return {'edit': False, 'respond': False, 'offer': False}
         principal = context.principal
         writable = self._writable(context)
         own = project.get('requestedDesigner') in principal.identities
@@ -173,14 +178,17 @@ class JobService:
         config = self.runtime.active_config()
         projects = [self._project_dto(context, p) for p in raw['projects']
                     if self._can_read(principal, p)]
+        visible_copied_designers = {p.get('requestedDesigner') for p in projects if p.get('readOnly')}
         directory = [d for d in raw.get('designers', [])
-                     if d['id'] in config.invites or d['id'] in principal.identities]
+                     if d['id'] in config.invites or d['id'] in principal.identities
+                     or d['id'] in visible_copied_designers]
         directory = list({
             (principal.email if d['id'] in principal.identities else d['id']):
             ({**d, 'id': principal.email, 'name': principal.name}
              if d['id'] in principal.identities else d)
             for d in directory
         }.values())
+        directory = [{**d, 'canReceiveOffer': d['id'] in config.invites} for d in directory]
         if not any(d['id'] == principal.email for d in directory):
             directory.append({
                 'id': principal.email, 'name': principal.name,
@@ -196,7 +204,7 @@ class JobService:
             counts.append({
                 **designer, 'jobs': len(accepted),
                 'hours': sum(p.get('hours') or 0 for p in accepted),
-                'offers': len([p for p in own if p.get('response') not in ('accepted', 'declined')]),
+                'offers': len([p for p in own if not p.get('readOnly') and p.get('response') not in ('accepted', 'declined')]),
             })
         writable = self._writable(context)
         return {
@@ -257,6 +265,8 @@ class JobService:
             key = self._key(principal, key)
             if job_id:
                 project = self._project(context, job_id)
+                if project.get('readOnly'):
+                    raise WriteError('Copied DEV projects are read-only. Use a test record to make changes.', 403)
                 permissions = self._permissions(context, project)
                 with reader.store.db() as db:
                     replay = db.execute(

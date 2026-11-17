@@ -39,3 +39,11 @@ test('request validation only requires factual intake inputs and rejects malform
   assert.ok(validateRequest({...values,reference1:'javascript:alert(1)'}).reference1);
   assert.deepEqual(filterProjects(projects,{query:'FIGURE'}).map(p=>p.id),['one']);
 });
+
+test('copied project source filter preserves classification and blocks stage mutation',()=>{
+  const copied={...projects[0],id:'copied',readOnly:true,synthetic:false};
+  assert.deepEqual(filterProjects([...projects,copied],{source:'copied'}).map(p=>p.id),['copied']);
+  assert.equal(filterProjects([...projects,copied],{source:'test'}).length,projects.length);
+  assert.deepEqual(filterProjects([...projects,copied],{source:'copied',designer:'a',query:'FIGURE'}).map(p=>p.id),['copied']);
+  assert.throws(()=>moveProject(copied,'Completed'),/read-only/);
+});

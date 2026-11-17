@@ -1,6 +1,6 @@
 # Custom portal proposal and access model
 
-The proposal adds a custom website while retaining Smartsheet as the job system behind it. It does not replace the existing native prototype. The working code currently offers a public synthetic demo and a local read-only DEV adapter.
+The proposal adds a custom website while retaining Smartsheet as the job system behind it. It does not replace the existing native prototype. The working code currently offers a public synthetic demo and a local DEV adapter with separate read-only and explicitly enabled editing modes.
 
 ## Employee intake is a first-class requirement
 
@@ -36,8 +36,11 @@ Smartsheet's documented authorization-code exchange uses an app secret. The stat
 
 The development server binds to `127.0.0.1` only. An ephemeral HttpOnly, SameSite=Strict cookie guards its read endpoints, and Host/Origin checks reject foreign browser origins. This is local isolation, not ORNL sign-in. The token is entered using `getpass` and lives only in process memory.
 
-Only configured synthetic row IDs on `DEV Graphics Assignments` are requested; the source ID, name and DEV marker are checked before projection. Only a selected allowlist of job fields is returned. Raw sheet payloads and tokens are not logged or saved. One fixed-sheet GET and verified row-attachment GETs are implemented; all mutations are absent. Static traversal is blocked.
+The adapter uses configured synthetic row IDs or the existing native DEV-only filter on the approved DEV sheet. It verifies the source identity, exact filter definition and each row's DEV marker before returning a projection. New native DEV requests can therefore be discovered on refresh. API level 2 preserves complex task-category data.
 
+Read-only mode has no enabled mutation path. Explicit DEV editing adds bounded intake, field updates, offers/responses, stages and new reference uploads. It never changes column definitions, formulas, workflow definitions or shared job selection. Each save checks that DEV automations remain disabled. The existing assignment formula owns Assigned Designer. A private SQLite ledger retains new IDs and idempotency keys; credentials remain memory-only. See [field mapping and operational limits](local-dev.md).
+
+Writes require the local session, exact Host/Origin, an ephemeral CSRF token and a request identifier. Only whitelisted project actions are accepted. There is no arbitrary API proxy or deletion endpoint. Revision checks reject already-stale edits; they do not claim an atomic lock against simultaneous native edits.
 File links in the local app point to a verified-job endpoint. It verifies the attachment inventory, obtains a fresh temporary URL and retrieves the file without forwarding Smartsheet credentials to storage. Only safe raster/text MIME types are previewed inline; other formats download. No expiring signed URL is persisted as a permanent link.
 
 ## Remaining implementation gates
@@ -45,7 +48,7 @@ File links in the local app point to a verified-job endpoint. It verifies the at
 1. Confirm ORNL identity provider, employee eligibility and Graphics role membership.
 2. Register the approved apps and select backend hosting / secure credential storage.
 3. Verify employee intake with a non-Graphics account and a user without a Smartsheet account.
-4. Implement a separately approved DEV submission/write path, idempotency and field ownership.
+4. Extend the tested local DEV submission/write path to an approved hosted backend, with real role authorization, durable idempotency and audit storage.
 5. Test true authenticated multi-user isolation, attachment access, unauthorized IDs and concurrent edits.
 6. Qualify AI, email, routing, SCOUT and Dropbox independently; none is enabled here.
 

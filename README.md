@@ -2,14 +2,15 @@
 
 A separate custom-portal proposal alongside the existing native Smartsheet dashboards. The visual system follows the Team App Library: Mulish, ORNL Green / Hale Navy, square components, a restrained Energy accent and clear project navigation. Design draft; not an approved production service. No ORNL logo is reproduced.
 
-## Two deliberately separate modes
+## Separate public and local modes
 
 | Mode | Data | Changes |
 | --- | --- | --- |
 | Public GitHub Pages demo | Fictional projects and people bundled in `web/demo-data.js` | In this browser tab only; reset on reload |
-| Local DEV connection | Explicitly allowlisted synthetic rows on the approved DEV sheet | Read-only. No Smartsheet write method exists in the gateway |
+| Local DEV read-only | Explicit synthetic row IDs, or the verified native DEV-only filter | GET only |
+| Local DEV editor | Approved synthetic DEV rows plus new DEV intake | Saves intake, selected job fields, offers/responses, stages and new attachments |
 
-The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backend, include API credentials or publish DEV-sheet contents. Neither mode edits existing native dashboards, forms, formulas, reports, attachments, sharing or automations.
+The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backend, include API credentials or publish DEV-sheet contents. No mode edits native dashboards, form definitions, formulas, reports, sharing or automations. DEV editing changes approved synthetic job cells and adds new rows/files; existing attachments are retained.
 
 ## Try the prototype
 
@@ -21,7 +22,7 @@ The GitHub Pages deployment uploads **only `web/`**. It does not deploy a backen
 - Team workload: accepted active assignments and pending offers are counted separately; completed/archived jobs are excluded. Sample planning thresholds are not actual availability.
 - Completion / archiving: retain records. The demo stamps a completion date locally; it does not retrofit native sheet automation.
 
-Demo role switching is a presentation tool, **not authentication or a security boundary**. All public examples are fictional. AI, email notifications, live submission, production writes, calendar access, SCOUT and Dropbox are not connected.
+Demo role switching is a presentation tool, **not authentication or a security boundary**. All public examples are fictional. AI, email notifications, production intake/writes, calendar access, SCOUT and Dropbox are not connected. Local DEV intake and writes are available only through the loopback editor.
 
 ## Run locally
 
@@ -43,7 +44,9 @@ python3 backend/server.py --dev --sheet-id YOUR_APPROVED_DEV_SHEET_ID --row-ids 
 
 Enter the token at the hidden prompt. It stays in process memory, is never written to a file, and is never sent to the browser. Do not add it to a command, URL, GitHub secret used by Pages, frontend configuration or repository. The gateway binds only to loopback and is not a deployable public identity service. Stop it with Ctrl+C when finished.
 
-`--check --dev ...` performs two GET reads, compares the sheet version and prints only counts and request types. It does not print project contents. Both the row allowlist and DEV marker are required. A DEV flag alone is not the pilot's data boundary.
+`--check --dev ...` performs two GET reads, compares the sheet version and prints only counts and request types. It does not print project contents. Both the row allowlist and DEV marker are required in this narrow mode.
+
+For **DEV saves**, run `./start-dev.command` using the private `.local/dev-config.json`. The editor defaults to port 4174 and discovers synthetic requests through the existing, validated DEV-only filter. See [local DEV setup, field mapping and safeguards](docs/local-dev.md). The public Pages configuration remains demo-only.
 
 ## GitHub Pages
 
@@ -51,4 +54,4 @@ Set Settings → Pages → Source to **GitHub Actions**. Merging into `main` run
 
 ## Before live service
 
-See [architecture and access](docs/architecture.md), [scope and preservation](docs/scope.md) and [brand / content inventory](docs/design.md). Production employee authentication, role authorization, credential storage and write operations require their own implementation and validation. No present demo role or client-side filter establishes production access control.
+See [architecture and access](docs/architecture.md), [scope and preservation](docs/scope.md) and [brand / content inventory](docs/design.md). Production employee authentication, role authorization, hosted credential storage and production write qualification still require implementation and validation. No present demo role or client-side filter establishes production access control.

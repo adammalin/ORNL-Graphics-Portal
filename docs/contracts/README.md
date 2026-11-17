@@ -1,8 +1,9 @@
 # Proposed AI contract artifacts
 
-These files define the implementation target described in [the specification](../ai-agent-implementation-spec.md). They do not add a running endpoint, model connection or Smartsheet field.
+The analysis files define the implementation target described in [the specification](../ai-agent-implementation-spec.md). Stage 0 also implements the authenticated capability response. These contracts do not enable a model connection or add a Smartsheet field.
 
 - [intake-analysis.schema.json](intake-analysis.schema.json): Draft 2020-12 JSON Schema for untrusted external-agent output.
+- [portal-capabilities.schema.json](portal-capabilities.schema.json): Stage 0 capability response; all AI/MCP features remain disabled.
 - [examples/intake-context.synthetic.json](examples/intake-context.synthetic.json): a fictional complete request with its date supplied in notes instead of the structured field.
 - [examples/intake-analysis.synthetic.json](examples/intake-analysis.synthetic.json): the matching proposed brief, sourced date extraction and zero follow-up questions.
 - [Shared analysis instructions](../prompts/intake-analysis-v1.md): client/model-neutral prompt.

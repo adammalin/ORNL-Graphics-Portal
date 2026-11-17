@@ -8,7 +8,6 @@ import argparse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import getpass
-import hashlib
 import hmac
 import json
 from pathlib import Path
@@ -26,17 +25,21 @@ from flask import Flask, Response, jsonify, redirect, request, send_from_directo
 
 try:
     from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
-    from backend.dev_store import DevStore, WriteError
+    from backend.dev_store import WriteError
+    from backend.principals import Actor
+    from backend.job_service import JobService, PilotStore
+    from backend.ai_repository import migrate_private_state
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
-    from dev_store import DevStore, WriteError
+    from dev_store import WriteError
+    from principals import Actor
+    from job_service import JobService, PilotStore
+    from ai_repository import migrate_private_state
 
 SESSION_COOKIE = '__Host-graphics_pilot'
 LOGIN_COOKIE = '__Host-graphics_login'
 CALLBACK = '/auth/smartsheet/callback'
-WRITABLE_ACCESS = {'OWNER', 'ADMIN', 'EDITOR', 'EDITOR_SHARE'}
 EMAIL = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+')
-KEY = re.compile(r'[A-Za-z0-9_-]{16,100}')
 
 
 def equal(a, b):
@@ -99,16 +102,6 @@ class PilotConfig:
 
 
 @dataclass
-class Actor:
-    user_id: str
-    email: str
-    name: str
-    identities: frozenset
-    invite_email: str
-    role: str
-
-
-@dataclass
 class PilotSession:
     actor: Actor
     reader: object
@@ -163,6 +156,8 @@ class PilotRuntime:
         self.sheet_lock = threading.RLock()
         self.lock = threading.RLock()
         self.pending, self.sessions, self.login_attempts = {}, {}, []
+        migrate_private_state(config.path)
+        self.jobs = JobService(self)
         config.path.parent.mkdir(parents=True, exist_ok=True)
         config.path.touch(mode=0o600, exist_ok=True)
         config.path.chmod(0o600)
@@ -283,137 +278,9 @@ class PilotRuntime:
                 session.reader._token = ''
                 self.audit(session.actor, 'sign-out', '', 'success')
 
-    def creator(self, job, actor):
-        with self.db() as db:
-            return bool(db.execute('SELECT 1 FROM creators WHERE sheet=? AND job=? AND user_id=?', (self.config.sheet_id, job, actor.user_id)).fetchone())
-
-    def can_read(self, actor, p):
-        return actor.role == 'coordinator' or p.get('requestedDesigner') in actor.identities or self.creator(p['id'], actor)
-
-    def permissions(self, session, p):
-        a = session.actor
-        writable = self.active_config().writes and self.active_config().workflow_review_valid() and session.reader.sheet.get('accessLevel') in WRITABLE_ACCESS
-        own_accepted = p.get('requestedDesigner') in a.identities and p.get('response') == 'accepted'
-        creator_new = p.get('stage') == 'New' and self.creator(p['id'], a)
-        return {'edit': bool(writable and (a.role == 'coordinator' or own_accepted or creator_new)),
-                'respond': bool(writable and p.get('requestedDesigner') in a.identities and p.get('stage') == 'Assigned' and p.get('response') not in ('accepted', 'declined')),
-                'offer': bool(writable and a.role == 'coordinator' and p.get('response') != 'accepted' and p.get('stage') not in ('Completed', 'Archived'))}
-
-    def project_data(self, session, raw=None):
-        config, a = self.active_config(), session.actor
-        raw = raw or session.reader.projects(force=True)
-        projects = []
-        for project in raw['projects']:
-            if self.can_read(a, project):
-                project = {k:v for k,v in project.items() if k != '_rowId'}
-                project['permissions'] = self.permissions(session, project)
-                # Canonicalize only the response DTO, never the native contact cell.
-                if project.get('requestedDesigner') in a.identities:
-                    project['requestedDesigner'] = a.email
-                projects.append(project)
-        directory = list(raw.get('designers', []))
-        # Never expose uninvited directory entries in the pilot payload.
-        directory = [d for d in directory if d['id'] in config.invites or d['id'] in a.identities]
-        directory = list({(a.email if d['id'] in a.identities else d['id']):
-                         ({**d,'id':a.email,'name':a.name} if d['id'] in a.identities else d)
-                         for d in directory}.values())
-        if not any(d['id'] == a.email for d in directory):
-            directory.append({'id':a.email,'name':a.name,'initials':''.join(x[:1] for x in a.name.split()[:2]),'capacity':None})
-        counts = []
-        for d in directory:
-            identities = a.identities if d['id'] == a.email else {d['id']}
-            own = [p for p in raw['projects'] if p.get('requestedDesigner') in identities and p.get('stage') not in ('Completed','Archived')]
-            accepted = [p for p in own if p.get('response') == 'accepted']
-            counts.append({**d,'jobs':len(accepted),'hours':sum(p.get('hours') or 0 for p in accepted),'offers':len([p for p in own if p.get('response') not in ('accepted','declined')])})
-        return {'mode':'dev-write' if config.writes and config.workflow_review_valid() and session.reader.sheet.get('accessLevel') in WRITABLE_ACCESS else 'dev-readonly',
-                'projects':projects,'designers':directory,'taskTypes':raw.get('taskTypes',[]),'taskTypeMultiple':raw.get('taskTypeMultiple',False),'priorities':raw.get('priorities',[]),
-                'teamWorkload':counts,'actor':{'id':a.email,'name':a.name,'role':a.role},'csrf':session.csrf,
-                'canCreate':bool(config.writes and config.workflow_review_valid() and session.reader.sheet.get('accessLevel') in WRITABLE_ACCESS),
-                'accessLevel':session.reader.sheet.get('accessLevel','VIEWER')}
-
     def audit(self, actor, action, job, outcome):
         with self.db() as db:
             db.execute('INSERT INTO audit VALUES (?,?,?,?,?,?)', (datetime.now(timezone.utc).isoformat(),actor.user_id,actor.role,action,job,outcome))
-
-
-class PilotStore(DevStore):
-    def __init__(self, reader, path, runtime, actor):
-        self.runtime, self.actor = runtime, actor
-        super().__init__(reader, path)
-
-    def metadata(self):
-        data = super().metadata()
-        directory = {p['id']:p for p in data['designers']}
-        for email in self.runtime.active_config().invites:
-            directory.setdefault(email,{'id':email,'name':email,'initials':email[:2].upper(),'capacity':None})
-        data['designers'] = [d for email,d in directory.items() if email in self.runtime.active_config().invites or email in self.actor.identities]
-        return data
-
-    def require_writes(self):
-        config = self.runtime.active_config()
-        if not config.writes:
-            raise WriteError('Writes are disabled for this pilot.', 403)
-        if not config.workflow_review_valid():
-            raise WriteError('The native workflow review is missing or expired. Pilot writes are paused.', 403)
-
-    def validate_source(self):
-        self.require_writes()
-        return super().validate_source()
-
-    def namespaced_key(self, key):
-        if not isinstance(key,str) or not KEY.fullmatch(key):
-            raise WriteError('A valid save identifier is required.')
-        return hashlib.sha256((self.actor.user_id+':'+key).encode()).hexdigest()
-
-    def perform_for(self, session, key, body, job_id=None):
-        self.require_writes()
-        with self.reader._lock:
-            self.reader.projects(force=True)
-            if self.reader.sheet.get('accessLevel') not in WRITABLE_ACCESS:
-                raise WriteError('Your Smartsheet account cannot edit this sheet.', 403)
-            key = self.namespaced_key(key)
-            if job_id:
-                p = next((p for p in self.reader._cache['projects'] if p['id']==job_id),None)
-                if not p or not self.runtime.can_read(self.actor,p):
-                    raise WriteError('This project is not available to your account.',404)
-                perms = self.runtime.permissions(session,p)
-                with self.db() as db:
-                    replay = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?',(self.reader.sheet_id,key)).fetchone()
-                if not replay:
-                    action = body.get('action') if isinstance(body,dict) else None
-                    allowed = perms['respond'] if action in ('accept','decline') else perms['offer'] if action=='offer' else perms['edit'] if action in ('edit','stage') else False
-                    if not allowed:
-                        raise WriteError('Your account cannot perform this action on this job.',403)
-                    if action=='offer' and body.get('designer') not in self.runtime.active_config().invites:
-                        raise WriteError('Offer jobs only to invited pilot users.',403)
-            else:
-                if not isinstance(body,dict) or not isinstance(body.get('fields'),dict):
-                    raise WriteError('Invalid intake fields.')
-                body = {**body,'fields':{**body['fields'],'email':self.actor.email,'requestor':self.actor.name}}
-            try:
-                result = super().perform(key,body,job_id)
-                saved_job = result['jobId']
-                if job_id is None:
-                    with self.db() as db:
-                        db.execute('INSERT OR IGNORE INTO creators VALUES (?,?,?)',(self.reader.sheet_id,saved_job,self.actor.user_id))
-                self.runtime.audit(self.actor,body.get('action','create'),saved_job,'success')
-                return {**self.runtime.project_data(session,result),'jobId':saved_job}
-            except (WriteError,GatewayError):
-                self.runtime.audit(self.actor,body.get('action','create'),job_id or '', 'unconfirmed')
-                raise
-
-    def upload_for(self, session, key, job_id, expected, name, mime, content):
-        self.require_writes()
-        with self.reader._lock:
-            self.reader.projects(force=True)
-            p = next((p for p in self.reader._cache['projects'] if p['id']==job_id),None)
-            if not p or not self.runtime.can_read(self.actor,p):
-                raise WriteError('This project is not available to your account.',404)
-            if not self.runtime.permissions(session,p)['edit']:
-                raise WriteError('Your account cannot add references to this project.',403)
-            result = super().upload(self.namespaced_key(key),job_id,expected,name,mime,content)
-            self.runtime.audit(self.actor,'upload',job_id,'success')
-            return self.runtime.project_data(session,result)
 
 
 def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetReader, reload_config=None):
@@ -424,6 +291,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     app = Flask(__name__,static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=MAX_FILE_BYTES,TRUSTED_HOSTS=[config.host,'127.0.0.1','localhost'])
     app.extensions['pilot'] = runtime
+    app.extensions['job_service'] = runtime.jobs
 
     @app.before_request
     def guards():
@@ -503,37 +371,35 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         s = signed_in()
         return jsonify(actor={'id':s.actor.email,'name':s.actor.name,'role':s.actor.role},csrf=s.csrf)
 
+    def browser_workspace(data):
+        # CSRF belongs only to the browser adapter, never the shared job service.
+        return jsonify({**data, 'csrf': signed_in().csrf})
+
+    @app.get('/api/v1/capabilities')
+    def capabilities():
+        return jsonify(runtime.jobs.capabilities(request.cookies.get(SESSION_COOKIE)))
+
     @app.get('/api/projects')
     def projects():
-        s = signed_in()
-        return jsonify(runtime.project_data(s))
+        return browser_workspace(runtime.jobs.workspace(request.cookies.get(SESSION_COOKIE)))
 
     @app.post('/api/projects')
     def create_project():
-        s = signed_in()
-        return jsonify(s.reader.store.perform_for(s,request.headers.get('Idempotency-Key',''),request.get_json(silent=True)))
+        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request.get_json(silent=True)))
 
     @app.patch('/api/projects/<job>')
     def update_project(job):
-        s = signed_in()
-        return jsonify(s.reader.store.perform_for(s,request.headers.get('Idempotency-Key',''),request.get_json(silent=True),job))
+        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request.get_json(silent=True),job))
 
     @app.post('/api/projects/<job>/attachments')
     def upload(job):
-        s = signed_in()
         name = request.headers.get('X-Filename','')
         from urllib.parse import unquote
-        return jsonify(s.reader.store.upload_for(s,request.headers.get('Idempotency-Key',''),job,request.headers.get('X-Project-Revision',''),unquote(name),request.mimetype,request.get_data(cache=False)))
+        return browser_workspace(runtime.jobs.upload(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),job,request.headers.get('X-Project-Revision',''),unquote(name),request.mimetype,request.get_data(cache=False)))
 
     @app.get('/api/projects/<job>/attachments/<attachment>')
     def attachment(job,attachment):
-        s = signed_in()
-        with runtime.sheet_lock:
-            data = s.reader.projects(force=True)
-            p = next((p for p in data['projects'] if p['id']==job),None)
-            if not p or not runtime.can_read(s.actor,p):
-                raise WriteError('This project is not available to your account.',404)
-            content,mime,name = s.reader.attachment(job,attachment)
+        content,mime,name = runtime.jobs.attachment(request.cookies.get(SESSION_COOKIE),job,attachment)
         download = 'download' in request.args or mime not in {'image/png','image/jpeg','image/webp','text/plain'}
         response = Response(content,content_type='application/octet-stream' if download else mime)
         response.headers['Content-Disposition'] = ('attachment' if download else 'inline')+"; filename*=UTF-8''"+quote(name,safe='')

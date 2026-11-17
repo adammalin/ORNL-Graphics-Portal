@@ -28,6 +28,7 @@ export function workload(projects, designers = DESIGNERS) {
     offers: projects.filter(p => isActive(p) && p.requestedDesigner === person.id && p.response !== 'accepted' && p.response !== 'declined').length }; });
 }
 export function moveProject(project, stage, now = new Date()) {
+  if (project.readOnly) throw new Error('Copied projects are read-only.');
   if (!STAGES.includes(stage)) throw new Error('Choose a valid project stage.');
   if (stage === 'Assigned' && !project.requestedDesigner) throw new Error('Offer this job to a designer before moving it to Assigned.');
   if (['Accepted', 'In Progress', 'In Review', 'Completed'].includes(stage) && !assignedDesigner(project)) throw new Error('Record a designer’s acceptance before starting this job.');
@@ -35,9 +36,9 @@ export function moveProject(project, stage, now = new Date()) {
 }
 export function safeUrl(value) { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : null; } catch { return null; } }
 export function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-export function filterProjects(projects, { query = '', designer = '', stage = '' } = {}) {
+export function filterProjects(projects, { query = '', designer = '', stage = '', source = 'all' } = {}) {
   const q = query.trim().toLowerCase();
-  return projects.filter(p => (!q || [p.id,p.title,p.description,p.requestor,p.taskType].some(v => String(v || '').toLowerCase().includes(q))) && (!designer || assignedDesigner(p) === designer || p.requestedDesigner === designer) && (!stage || p.stage === stage));
+  return projects.filter(p => (source === 'all' || (source === 'copied' ? p.readOnly === true : p.readOnly !== true)) && (!q || [p.id,p.title,p.description,p.requestor,p.taskType].some(v => String(v || '').toLowerCase().includes(q))) && (!designer || assignedDesigner(p) === designer || p.requestedDesigner === designer) && (!stage || p.stage === stage));
 }
 export function validateRequest(values) {
   const errors = {};

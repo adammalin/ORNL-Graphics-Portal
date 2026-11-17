@@ -46,7 +46,7 @@ class AiService:
         ctx = self.runtime.jobs._fresh(sid)
         project = self.runtime.jobs._project(ctx, job)
         on, jobs = settings(self.runtime.active_config())
-        allowed = bool(on and job in jobs)
+        allowed = bool(on and job in jobs and project.get('synthetic') is True and not project.get('readOnly'))
         if enabled and not allowed:
             raise WriteError('AI is disabled for this job. Only explicitly selected synthetic DEV jobs are eligible.', 403)
         if write and ctx.reader.sheet.get('accessLevel') not in WRITABLE_ACCESS:

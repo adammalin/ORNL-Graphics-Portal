@@ -78,6 +78,12 @@ class PilotConfig:
             raise WriteError('Register the Smartsheet OAuth app and set its clientId.', 503)
         self.sheet_id = str(value.get('sheetId', ''))
         self.filter_id = str(value.get('filterId', ''))
+        copied = value.get('copiedRowIds', [])
+        if (not isinstance(copied, list) or len(copied) > 20
+                or any(not isinstance(r, str) or not re.fullmatch(r'\d{1,20}', r) for r in copied)
+                or len(set(copied)) != len(copied)):
+            raise WriteError('Select at most twenty unique copied DEV row IDs for read-only display.', 503)
+        self.copied_row_ids = frozenset(copied)
         if not self.sheet_id.isdigit() or not self.filter_id.isdigit():
             raise WriteError('The approved DEV sheet and filter must be configured.', 503)
         self.expires = utc_time(value.get('expiresAt', ''))
@@ -247,6 +253,7 @@ class PilotRuntime:
             raise WriteError('Smartsheet did not return an access token.', 401)
         actor = self.resolve_actor(self.oauth.profile(token))
         reader = self.reader_factory(self.config.sheet_id, [], token, filter_id=self.config.filter_id)
+        reader.copied_row_ids = self.active_config().copied_row_ids
         reader._lock = self.sheet_lock  # One writer per sheet across all pilot sessions.
         reader.projects(force=True)  # Uses this user's token; never a shared-token fallback.
         reader.store = PilotStore(reader, self.config.path, self, actor)

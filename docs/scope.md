@@ -7,6 +7,7 @@ November 17, 2026. This repository is a separate custom-portal pitch. The user e
 - No native source snapshots, credentials or private evidence are placed in this public repository. The Pages artifact includes only `web/` and remains a fictional demo.
 - Read-only mode remains GET-only. The opt-in DEV editor permits bounded row creation, updates to whitelisted fields, offer/response actions, stage changes and new attachments. The backend has no arbitrary endpoint, row movement, schema editing or sharing path.
 - The native DEV-only filter is verified before use and each row's DEV marker is checked independently. Explicit row-ID allowlists remain supported for narrower pilots.
+- An optional [selected copied-project preview](copied-project-preview.md) uses a separate read-only row allowlist on the same DEV sheet. These rows cannot be edited, offered, accepted, uploaded to or processed by AI; they do not join the native write allowlist.
 - No row or attachment deletion, file replacement or version upload is exposed. Completed/archived records and all existing reference files are retained.
 - Existing formulas and system fields stay under Smartsheet control. Assigned Designer is never manually set; the native formula derives it from the requested designer and explicit response.
 - New requests preserve extra intake details as labeled sections in Additional Details. Requested and final due dates are separate. Edits send only changed, permitted cells.

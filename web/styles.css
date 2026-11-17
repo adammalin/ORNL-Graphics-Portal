@@ -17,3 +17,5 @@ dialog{border:1px solid var(--ornl-graphite);padding:0;max-width:690px;width:cal
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}.card:hover{transform:none}}
 
 @media(max-width:650px){.field input,.field textarea,.field select{font-size:16px}.field>label{font-size:12px}.field small,.upload-zone p{font-size:11px}}
+
+.reference-upload{display:grid;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid var(--ornl-graphite)}.reference-upload label{font-size:12px;font-weight:800}.reference-upload input{max-width:100%;min-width:0}.reference-upload .button{justify-self:start}.reference-upload p{margin:0}select[multiple]{height:auto;min-height:140px}main[aria-busy="true"]{cursor:progress}

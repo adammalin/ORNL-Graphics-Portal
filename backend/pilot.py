@@ -30,6 +30,8 @@ try:
     from backend.job_service import JobService, PilotStore
     from backend.ai_repository import migrate_private_state
     from backend import microsoft_intake as employee_intake
+    from backend.ai_service import AiService, settings as ai_settings
+    from backend.ai_validation import strict_json
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
     from dev_store import WriteError
@@ -37,6 +39,8 @@ except ImportError:
     from job_service import JobService, PilotStore
     from ai_repository import migrate_private_state
     import microsoft_intake as employee_intake
+    from ai_service import AiService, settings as ai_settings
+    from ai_validation import strict_json
 
 SESSION_COOKIE = '__Host-graphics_pilot'
 LOGIN_COOKIE = '__Host-graphics_login'
@@ -88,6 +92,7 @@ class PilotConfig:
         self.path = Path(value.get('statePath', Path(__file__).resolve().parents[1] / '.local/pilot-state.sqlite3'))
         self.writes = value.get('writesEnabled') is True
         employee_intake.settings(self)  # Validate optional identity configuration.
+        ai_settings(self)
 
     def available(self):
         if time.time() >= self.expires:
@@ -161,6 +166,7 @@ class PilotRuntime:
         self.pending, self.sessions, self.login_attempts = {}, {}, []
         migrate_private_state(config.path)
         self.jobs = JobService(self)
+        self.ai = AiService(self)
         config.path.parent.mkdir(parents=True, exist_ok=True)
         config.path.touch(mode=0o600, exist_ok=True)
         config.path.chmod(0o600)
@@ -296,6 +302,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     app.config.update(MAX_CONTENT_LENGTH=MAX_FILE_BYTES,TRUSTED_HOSTS=[config.host,'127.0.0.1','localhost'])
     app.extensions['pilot'] = runtime
     app.extensions['job_service'] = runtime.jobs
+    app.extensions['ai_service'] = runtime.ai
     intake = (employee_intake.IntakeService(runtime, microsoft_secret, intake_token, microsoft_oauth)
               if employee_intake.settings(config) else None)
     app.extensions['employee_intake'] = intake
@@ -451,6 +458,48 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     def capabilities():
         return jsonify(runtime.jobs.capabilities(request.cookies.get(SESSION_COOKIE)))
 
+    def ai_body(limit=256*1024):
+        if request.mimetype != 'application/json':
+            raise WriteError('Use an application/json request.', 415)
+        return strict_json(request.stream.read(limit+1), limit)
+
+    def offset():
+        try:
+            return int(request.args.get('offset','0'))
+        except ValueError:
+            raise WriteError('Invalid page offset.') from None
+
+    @app.get('/api/v1/jobs/<job>/ai')
+    def ai_status(job):
+        return jsonify(runtime.ai.status(request.cookies.get(SESSION_COOKIE),job,offset()))
+
+    @app.get('/api/v1/jobs/<job>/reference-inventory')
+    def ai_references(job):
+        return jsonify(runtime.ai.references(request.cookies.get(SESSION_COOKIE),job,offset()))
+
+    @app.post('/api/v1/jobs/<job>/intake-contexts')
+    def ai_prepare(job):
+        return jsonify(runtime.ai.prepare(request.cookies.get(SESSION_COOKIE),job,
+            request.headers.get('Idempotency-Key',''),ai_body(16384)))
+
+    @app.get('/api/v1/jobs/<job>/intake-contexts/<context>')
+    def ai_context(job,context):
+        return jsonify(runtime.ai.get_context(request.cookies.get(SESSION_COOKIE),job,context))
+
+    @app.post('/api/v1/jobs/<job>/ai-drafts')
+    def ai_draft_import(job):
+        return jsonify(runtime.ai.save_draft(request.cookies.get(SESSION_COOKIE),job,
+            request.headers.get('Idempotency-Key',''),ai_body()))
+
+    @app.get('/api/v1/jobs/<job>/ai-drafts/<draft>')
+    def ai_draft_get(job,draft):
+        return jsonify(runtime.ai.get_draft(request.cookies.get(SESSION_COOKIE),job,draft))
+
+    @app.post('/api/v1/jobs/<job>/ai-drafts/<draft>/reviews')
+    def ai_review(job,draft):
+        return jsonify(runtime.ai.review(request.cookies.get(SESSION_COOKIE),job,draft,
+            request.headers.get('Idempotency-Key',''),ai_body(16384)))
+
     @app.get('/api/projects')
     def projects():
         return browser_workspace(runtime.jobs.workspace(request.cookies.get(SESSION_COOKIE)))
@@ -499,7 +548,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

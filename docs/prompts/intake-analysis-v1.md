@@ -1,6 +1,6 @@
 # Intake analysis prompt — version 1.0
 
-Status: proposed instruction template for implementation and synthetic evaluation. This file does not start an agent or enable an integration.
+Status: Stage 1 instruction template for selected synthetic DEV jobs. This file does not start an agent or call a model. Browser context and import controls require the explicitly enabled pilot.
 
 Use with a server-prepared context and the output contract in ../contracts/intake-analysis.schema.json. The same instructions can be used by the user's existing Codex agent; a portal model API key and native Smartsheet AI are not prerequisites.
 
@@ -39,8 +39,8 @@ Prepare an evidence-based design brief and draft intake enrichment for exactly t
 
 The brief is useful without inventing facts. Provided information is not asked for again. Source cues are verifiable. Unread material and conflicts remain visible. No job fields or external systems change merely because the analysis suggested them.
 
-## Example user instruction for the future browser/MCP workflow
+## Example user instruction for the browser workflow
 
 > Open the selected DEV job in the portal. Prepare its AI context, review its available references, and save a draft brief, proposed tasks and any necessary follow-up questions. Preserve the original request and do not apply business-field changes yet. If anything cannot be read, include that in the draft's coverage.
 
-The named context/import/MCP controls are implementation targets defined by the specification, not claims that those controls already exist.
+Context preparation, external draft import and sidecar review are implemented in the enabled Stage 1 browser pilot. MCP, bearer agent access, business-field apply and native publication remain later stages.

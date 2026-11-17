@@ -6,6 +6,14 @@ This service is separate from the local shared-token editor and the public ficti
 
 Use one process on the laptop, behind an authenticated HTTPS development tunnel forwarding to `127.0.0.1:4175`. The tunnel owner signs in through Microsoft Dev Tunnels. Keep the outer tunnel private until the inner application has passed its sign-in and access checks. The printed **Hosting port** URL is authoritative; it can differ from the tunnel ID.
 
+Preserve the browser's original headers before testing saves:
+
+```sh
+devtunnel update YOUR_TUNNEL_ID --host-header unchanged --origin-header unchanged
+```
+
+Dev Tunnels otherwise rewrites Origin to localhost, which the portal correctly rejects. Preserve the original value; do not loosen the app's exact-origin check or force all origins to a trusted literal. The local `start-pilot-tunnel.command` applies these settings before hosting the existing private tunnel configured by `tunnelId`.
+
 Register an unpublished Smartsheet OAuth app in Developer Tools. Set its app URL to the exact tunnel HTTPS origin and its redirect URL to that origin plus `/auth/smartsheet/callback`. Each user consents to `READ_SHEETS WRITE_SHEETS`. These provider scopes are broader than the app's DEV restrictions: the server enforces the approved sheet/filter, named invites, role, row permissions and no-delete API. Smartsheet consent does not itself restrict the token to one sheet.
 
 ```sh
@@ -75,6 +83,8 @@ Automated synthetic transports do not prove live Smartsheet OAuth or a second pe
 Keep the outer tunnel authenticated. A tenant access rule admits the Microsoft organization to the tunnel boundary; the app still admits only the exact Smartsheet invite list. Confirm the intended Microsoft tenant before enabling such a rule. Do not replace it with an anonymous shared editor. Set tunnel access expiration no later than the app expiration.
 
 ## Stop or restart
+
+Keep two Terminal windows open when running the pilot yourself: `./start-pilot-tunnel.command` hosts the existing tunnel, and `./start-pilot.command` starts the backend with its hidden secret prompt. The tunnel helper needs `tunnelId` in the private config. Do not start a second host while the existing one is running.
 
 Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. Stop the tunnel host as well when testing is over. Retain the private SQLite file and configuration; enter the secret again on restart. Review native workflows again before re-enabling writes after the review expires. The laptop must stay awake, online and connected as required for the pilot link to work.
 

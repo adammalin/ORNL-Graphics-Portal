@@ -31,7 +31,7 @@ Create a private, permission-600 `.local/pilot-config.json`; never commit it. Ex
 }
 ```
 
-Start `./start-pilot.command` locally and enter the app secret at its hidden prompt. It is held in process memory, never saved in the configuration or sent to the browser. Do not paste secrets into chat, shell arguments, URLs, source files, screenshots or GitHub settings. The app secret is unrelated to a personal Smartsheet API token.
+Start `./start-pilot.command` locally and enter the app secret at its hidden prompt. It is held in process memory, never saved in the configuration or sent to the browser. If `clientId` is omitted from the private config, the launcher asks for it first. Do not paste secrets into chat, shell arguments, URLs, source files, screenshots or GitHub settings. The app secret is unrelated to a personal Smartsheet API token.
 
 Before enabling saves, inspect **all** workflows in the native DEV sheet UI. Smartsheet's automation API does not return multistep workflows, so the API check alone cannot establish that all actions are disabled. Preserve workflow definitions; if anything is active or uncertain, leave pilot saves disabled. Record a completed review with:
 

@@ -569,7 +569,12 @@ def main():
     parser.add_argument('--port',type=int,default=4175)
     args = parser.parse_args()
     path = Path(args.config).resolve()
-    def load():return PilotConfig(json.loads(path.read_text()))
+    initial = json.loads(path.read_text())
+    client_id = initial.get('clientId') or input('Smartsheet OAuth app client ID: ').strip()
+    def load():
+        value = json.loads(path.read_text())
+        value['clientId'] = value.get('clientId') or client_id
+        return PilotConfig(value)
     config = load()
     secret = getpass.getpass('Smartsheet OAuth app secret (memory only, never saved): ')
     app = create_app(config,secret,reload_config=load)

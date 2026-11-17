@@ -58,3 +58,22 @@ Private source receipts, source identifiers, snapshots, filenames/IDs and connec
 The source's Task Type column required API level 2 and a MULTI_PICKLIST object, despite appearing as TEXT_NUMBER in the compatibility response. Initial invalid submissions were rejected by Smartsheet; the corrected browser submission was verified as exactly one new row.
 
 Remaining qualification: real organizational sign-in and permissions, a shared hosted backend, real employee/designer sessions, exact simultaneous-edit behavior across independent writers, production uploads/intake, routing, calendar availability, AI, notifications, SCOUT and Dropbox. The local revision check cannot provide an atomic native-editor lock.
+
+## Invited OAuth pilot qualification
+
+November 17, 2026. Separate from the public fictional Pages demo and the local shared-token editor.
+
+- CI passed 5 JavaScript tests and 25 Python tests, including 12 OAuth HTTP/authorization and launcher tests. Independent synthetic identities cover per-user tokens, role/row boundaries, spoofing, secure cookies and browser-bound one-use OAuth state, CSRF, expiry, invite removal, user-scoped retries, add-only references and blocked deletion. The launcher retries an empty secret without echoing it.
+- Registered an unpublished OAuth app. The owner entered its secret at a hidden local prompt; no credential was committed or sent to the frontend. The actual browser completed Microsoft tunnel authentication, Smartsheet consent, current-user verification and DEV-source reads using the signed-in owner's OAuth token.
+- The first write was rejected by the exact-origin check because Dev Tunnels rewrote Origin to localhost. Corrected the tunnel to preserve Host and Origin; the application check was retained. The corrected retry saved one synthetic intake job, including original request text, notes, intended audience, specifications, category, requested date, deliverables, a reference URL and uploaded reference file.
+- Live browser editing saved an estimate. Offering the test job to the signed-in owner and accepting it populated the native assignment formula and added it to My Work. In Progress → Completed → Archived persisted through a full reload, retaining the completion date and reference links. The test record was retained.
+- The uploaded text reference was listed and downloaded through the authenticated endpoint. SHA-256 matched the original synthetic file. Smartsheet's reported file type did not enable an inline text preview for this new file; this check qualifies download, not inline preview.
+- Live anonymous HTTP checks returned 401 for projects, 405 for deletion and 404 for private configuration. The login page used no-store. Native UI review covered all 20 DEV workflows, including the disabled workflow labelled Unable to run; no workflow definitions were changed.
+- Live sign-out returned the browser to the login page. The application audit recorded the session closing; the test job and references remained stored in the DEV sheet.
+- After explicit user approval, the outer tunnel permits the configured Microsoft tenant to reach the login page for five days. The inner application still admits only the six private Smartsheet invites. No anonymous tunnel access or shared-token fallback was enabled.
+
+Native Manage Access showed all six invitees already had editing access (owner, admin or editor with sharing). No sheet-sharing changes were made. This is a source-access check, not a completed login test for each person.
+
+Still pending: a second real tester's independent login and API write access, exact concurrent edits with native/external writers, production hosting/employee intake and the integrations listed above. The laptop must remain running. App sessions, tunnel access and the daily native-workflow review expire independently; expiry is a real availability limit, not a production operations arrangement.
+
+Screenshots, source job identifiers, invite emails, tunnel/configuration identifiers and private receipts stay under ignored local paths. The public Pages site remains demo-only.

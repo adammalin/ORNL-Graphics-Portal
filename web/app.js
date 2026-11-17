@@ -26,8 +26,9 @@ document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.da
 const main = document.querySelector('main');
 const dialog = document.querySelector('#dialog');
 const config = window.PORTAL_CONFIG || { dataMode:'demo' };
-const connected = ['dev-readonly','dev-write'].includes(config.dataMode);
-const state = { taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
+const authenticated = config.dataMode === 'pilot';
+const connected = authenticated || ['dev-readonly','dev-write'].includes(config.dataMode);
+const state = { actor:null, csrf:null, canCreate:false, teamWorkload:null, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
 const live = () => state.mode === 'dev-write';
 const readonly = () => !['demo','dev-write'].includes(state.mode);
 const person = id => state.designers.find(d => d.id === id);
@@ -39,7 +40,9 @@ const initials = name => name.split(/\s+/).map(n => n[0]).slice(0,2).join('').to
 const avatar = id => `<span class="avatar ${e(id)}" aria-hidden="true">${e(person(id)?.initials || initials(personName(id)))}</span>`;
 const route = () => { try { return decodeURIComponent(location.hash.slice(1) || '/').split('?')[0]; } catch { return '/not-found'; } };
 const findProject = id => state.projects.find(p => p.id === id);
-const canEdit = p => !readonly() && (state.person === 'coordinator' || assignedDesigner(p) === state.person);
+const isCoordinator = () => authenticated ? state.actor?.role === 'coordinator' : state.person === 'coordinator';
+const canEdit = p => !readonly() && (authenticated ? p.permissions?.edit === true : isCoordinator() || assignedDesigner(p) === state.person);
+const workloadRows = () => authenticated && state.teamWorkload ? state.teamWorkload : workload(state.projects,state.designers);
 const uniqueAttachments = p => (p.attachments || []).filter(f => f && f.name);
 function toast(message, error = false) { const el=document.querySelector('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.hidden=true,6500); }
 function modal(title, body, footer='') {
@@ -66,12 +69,12 @@ function offerPanel() {
   if(!offers.length) return `<section class="panel offer-panel"><div class="eyebrow">Project offers</div><h3>No offers waiting</h3><p>New project offers will appear here for the selected ${connected?'test':'demo'} designer.</p><a class="card-link" href="#/projects">Explore the team board →</a></section>`;
   const p=offers[0];return `<section class="panel offer-panel"><div class="eyebrow">${icon('brief')} Your next project?</div><h3>${e(p.title)}</h3><p>${e(p.taskType)}<br>Requested by ${e(p.requestor)}<br>Due ${e(formatDate(p.dueDate))}</p><div class="offer-actions"><a class="button button-primary button-small" href="#/projects/${encodeURIComponent(p.id)}">Review offer →</a></div><p class="quiet-note">Assignment is confirmed only after you accept.</p></section>`;
 }
-function teamMini() { return `<section class="panel team-mini"><h3>Team at a glance</h3>${workload(state.projects,state.designers).filter(d=>!connected||d.jobs||d.offers).slice(0,6).map(d=>`<div class="mini-person">${avatar(d.id)}<span><strong>${e(d.name)}</strong><br>${d.jobs} active project${d.jobs===1?'':'s'}</span><span>${d.hours}h</span></div>`).join('')}<p class="quiet-note">Estimated work, not confirmed availability.</p><a class="card-link" href="#/workload">Explore team workload →</a></section>`; }
+function teamMini() { return `<section class="panel team-mini"><h3>Team at a glance</h3>${workloadRows().filter(d=>!connected||d.jobs||d.offers).slice(0,6).map(d=>`<div class="mini-person">${avatar(d.id)}<span><strong>${e(d.name)}</strong><br>${d.jobs} active project${d.jobs===1?'':'s'}</span><span>${d.hours}h</span></div>`).join('')}<p class="quiet-note">Estimated work, not confirmed availability.</p><a class="card-link" href="#/workload">Explore team workload →</a></section>`; }
 function renderHome() {
   const own=person(state.person); const jobs=own?myProjects(state.projects,state.person):state.projects.filter(isActive);
   return `<section class="hero"><div><div class="eyebrow">Graphics Portal · Workspace preview</div><h1>Your projects.<br>One shared workspace.</h1><p>Submit a clear request, follow the work, and keep project information close at hand.</p><div class="hero-actions"><a class="button button-energy" href="#/new">${icon('plus')}New project request</a><a class="button button-quiet" href="#/my-work">Explore my work ${icon('arrow')}</a></div></div><aside class="hero-aside">${icon('people')}<strong>For everyone<br>requesting Graphics work.</strong><p>Employee intake is part of the proposal—not limited to the Graphics team.</p><a href="#/new">Try the employee request form →</a></aside></section>
     ${stats(state.projects)}
-    <div class="home-columns"><section><div class="section-heading"><div><h2>${own?'My active projects':'Active projects'}</h2><p>${own?`${e(own.name)} · ${connected?'Local test':'Demo designer'} view`:'Team workspace preview'}</p></div><a href="#/${own?'my-work':'projects'}">View board →</a></div><div class="project-grid">${jobs.slice(0,4).map(card).join('')||'<div class="empty-state"><p>No active assignments for this view.</p></div>'}</div></section><aside class="home-side">${offerPanel()}${teamMini()}</aside></div>
+    <div class="home-columns"><section><div class="section-heading"><div><h2>${own?'My active projects':'Active projects'}</h2><p>${own?`${e(own.name)} · ${authenticated?'Signed-in designer':connected?'Local test':'Demo designer'} view`:'Team workspace preview'}</p></div><a href="#/${own?'my-work':'projects'}">View board →</a></div><div class="project-grid">${jobs.slice(0,4).map(card).join('')||'<div class="empty-state"><p>No active assignments for this view.</p></div>'}</div></section><aside class="home-side">${offerPanel()}${teamMini()}</aside></div>
     <section class="steps-strip" aria-label="How the portal works"><article><b>01 / REQUEST</b><h3>Start with the project</h3><p>Share the goal, deliverables, dates and reference material.</p></article><article><b>02 / COORDINATE</b><h3>Find the right designer</h3><p>Graphics reviews the request and records the designer’s acceptance.</p></article><article><b>03 / DELIVER</b><h3>Keep the work together</h3><p>Follow progress from a job page, then retain the completed record.</p></article></section>`;
 }
 function collectionBase(type) {
@@ -90,7 +93,7 @@ function collectionResults(type) {
 function renderCollection(type) {
   state.lastWorkspace=type;
   const title=type==='my-work'?'My work':type==='archive'?'Completed & archived':'All projects';
-  const intro=type==='my-work'?'Accepted projects assigned to the selected designer. Each job opens its own page.':type==='archive'?'Completed projects stay available with their details and references.':'A shared view of active requests and work across the Graphics team.';
+  const intro=type==='my-work'?(authenticated?'Your accepted projects. Each job opens its own page.':'Accepted projects assigned to the selected designer. Each job opens its own page.'):type==='archive'?'Completed projects stay available with their details and references.':authenticated&&!isCoordinator()?'Requests and assignments available to your signed-in account.':'A shared view of active requests and work across the Graphics team.';
   const offers=type==='my-work'?offersForCurrent():[];
   return `${breadcrumbs([[title]])}${heading(title,intro,'Project workspace',`<a class="button button-primary" href="#/new">${icon('plus')}New request</a>`)}
     ${offers.length?`<div class="notice notice-warning"><strong>${offers.length} project offer${offers.length===1?'':'s'} waiting.</strong> <a class="inline-link" href="#/projects/${encodeURIComponent(offers[0].id)}">Review ${e(offers[0].title)} →</a></div>`:''}
@@ -109,7 +112,7 @@ function fileUrl(f,download=false) {
 }
 function renderDetail(id, focusReferences=false) {
   const p=findProject(id);if(!p)return notFound();
-  const assigned=assignedDesigner(p), ownOffer=!readonly()&&p.requestedDesigner===state.person&&!['accepted','declined'].includes(p.response)&&isActive(p);
+  const assigned=assignedDesigner(p), ownOffer=authenticated?p.permissions?.respond===true:!readonly()&&p.requestedDesigner===state.person&&!['accepted','declined'].includes(p.response)&&isActive(p);
   const refcount=uniqueAttachments(p).length+(p.references||[]).length;
   return `${breadcrumbs([['Projects',`#/${state.lastWorkspace}`],[p.id]])}
     <div class="page-heading detail-heading"><div><div class="detail-overline"><span class="job-id">${e(p.id)}</span>${stageTag(p.stage)}${p.priority==='High'?'<span class="priority priority-high">High priority</span>':''}</div><h1>${e(p.title)}</h1><p>${e(p.taskType||'Task type not specified')}</p></div><div class="page-actions"><a class="button button-small" href="#/${state.lastWorkspace}">← Back to projects</a>${canEdit(p)?`<button class="button button-primary button-small" data-action="edit-project" data-id="${e(p.id)}">Edit job</button>`:''}</div></div>
@@ -124,7 +127,7 @@ function renderDetail(id, focusReferences=false) {
     </div><aside class="detail-side">
       <section class="panel"><h2>Request information</h2><dl class="metadata"><div><dt>Requestor</dt><dd>${e(p.requestor||'Not specified')}</dd></div><div><dt>Email</dt><dd>${e(p.email||'Not specified')}</dd></div><div><dt>Group / department</dt><dd>${e(p.requestorGroup||(live()?'See project details':'Not specified'))}</dd></div><div><dt>Received</dt><dd>${e(formatDate(p.createdDate))}</dd></div><div><dt>Completed</dt><dd>${e(formatDate(p.completedDate))}</dd></div></dl></section>
       <section class="panel detail-controls"><h2>Project stage</h2>${canEdit(p)?`<label for="job-stage">Update stage</label><select id="job-stage">${STAGES.map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select><button class="button button-primary button-small" data-action="save-stage" data-id="${e(p.id)}">Update stage</button>`:`${stageTag(p.stage)}<p class="quiet-note">${readonly()?'Stage changes are disabled in the read-only connection.':assigned?'Switch to the assigned demo designer or coordinator to update this project.':'Assignment is recorded only after the offered designer accepts.'}</p>`}</section>
-      ${!readonly()&&state.person==='coordinator'&&!assigned?`<section class="panel detail-controls"><h2>Offer to a designer</h2><label for="offer-designer">Requested designer</label><select id="offer-designer">${state.designers.map(d=>`<option value="${e(d.id)}" ${d.id===p.requestedDesigner?'selected':''}>${e(d.name)}</option>`).join('')}</select><button class="button button-primary button-small" data-action="offer" data-id="${e(p.id)}">${live()?'Save designer offer':'Record demo offer'}</button><p class="quiet-note">No email is sent. ${live()?'Use the offered designer’s local test view to record acceptance.':'The designer must accept in the demo.'}</p></section>`:''}
+      ${!readonly()&&isCoordinator()&&!assigned&&(!authenticated||p.permissions?.offer)?`<section class="panel detail-controls"><h2>Offer to a designer</h2><label for="offer-designer">Requested designer</label><select id="offer-designer">${state.designers.map(d=>`<option value="${e(d.id)}" ${d.id===p.requestedDesigner?'selected':''}>${e(d.name)}</option>`).join('')}</select><button class="button button-primary button-small" data-action="offer" data-id="${e(p.id)}">${live()?'Save designer offer':'Record demo offer'}</button><p class="quiet-note">No email is sent. ${authenticated?'The invited designer records acceptance in their own signed-in session.':live()?'Use the offered designer’s local test view to record acceptance.':'The designer must accept in the demo.'}</p></section>`:''}
       <section class="panel"><h2>Project connections</h2><dl class="metadata"><div><dt>SCOUT job</dt><dd>Not connected</dd></div><div><dt>Project folder</dt><dd>Not connected</dd></div></dl><p class="quiet-note">SCOUT and Dropbox integration are future work.</p></section>
     </aside></div>`;
 }
@@ -133,7 +136,7 @@ function field(name,label,{type='text',required=false,full=false,value='',help='
   return `<div class="field ${full?'full':''}"><label for="${name}">${label}${required?' *':' <span>(optional)</span>'}</label>${input}${help?`<small id="${name}-help">${help}</small>`:''}<span class="field-error" id="${name}-error"></span></div>`;
 }
 function renderNew() {
-  if(readonly())return `${breadcrumbs([['New request']])}${heading('Employee project intake','The proposed employee form will use ORNL-approved sign-in, separate from Graphics team access.')}<div class="notice"><strong>Live submission is not enabled.</strong> This DEV connection is read-only so the native dashboards and flows stay unchanged. Use the public demo to try the form with synthetic information.</div><a class="button" href="#/projects">Back to projects →</a>`;
+  if(readonly()||(authenticated&&!state.canCreate))return `${breadcrumbs([['New request']])}${heading('Project intake',authenticated?'Your Smartsheet permissions and pilot settings control submission access.':'The proposed employee form will use ORNL-approved sign-in, separate from Graphics team access.')}<div class="notice"><strong>${authenticated?'Submission is currently unavailable.':'Live submission is not enabled.'}</strong> ${authenticated?'Your sheet access may be read-only, or the pilot owner may have paused writes.':'This DEV connection is read-only. Use the public demo to try the form with synthetic information.'}</div><a class="button" href="#/projects">Back to projects →</a>`;
   return `${breadcrumbs([['New project request']])}${heading('Tell us about your project.','Start with what you know. Graphics can clarify any remaining details before work begins.','Employee intake')}
     ${live()?'<div class="notice"><strong>DEV intake.</strong> This form saves a synthetic test request and its files to the DEV Smartsheet. Use test information only.</div>':'<div class="notice"><strong>Demo request only.</strong> Use fictional details. This form creates a sample job in this tab; it does not submit to Graphics or Smartsheet. Live intake will require ORNL-approved sign-in.</div>'}
     <div class="form-layout"><form id="request-form" class="request-form" novalidate>
@@ -151,7 +154,7 @@ function renderNew() {
 }
 function renderSuccess(id) { const p=findProject(id);if(!p)return notFound();return `<section class="success-panel">${icon('check')}<div class="eyebrow">${live()?'DEV request saved':'Demo request created'}</div><h1>${live()?'Your test request is saved.':'Your sample request is ready.'}</h1><p><strong>${e(p.title)}</strong><br>${e(p.id)}</p><p>It is now in the New lane, with the details and references you supplied.</p><div class="notice">${live()?'Saved in the DEV Smartsheet. This job remains available after refreshing or restarting the local server.':'This was a browser-only demonstration. No request was sent to Graphics or saved in Smartsheet. Refreshing the page resets the demo.'}</div><div class="page-actions"><a class="button button-primary" href="#/projects/${encodeURIComponent(p.id)}">View this job →</a><a class="button" href="#/projects">Open team board</a></div></section>`; }
 function renderWorkload() {
-  const rows=workload(state.projects,state.designers), active=state.projects.filter(isActive);
+  const rows=workloadRows(), active=state.projects.filter(isActive);
   return `${breadcrumbs([['Team workload']])}${heading('A shared view of the work.','Active projects and estimates help the team start an availability conversation.','Team workload')}
     <div class="notice"><strong>${connected?'DEV estimates':'Synthetic planning example'}.</strong> Completed and archived projects are excluded. Missing estimates are excluded from hours. These totals are not a calendar-based availability assessment.</div>
     <div class="workload-grid">${rows.map(d=>`<article class="workload-card"><div class="workload-person">${avatar(d.id)}<h2>${e(d.name)}</h2></div><div class="hours">${d.hours}<small> estimated hours</small></div>${d.capacity>0?`<div class="workload-bar" role="img" aria-label="${e(`${d.hours} estimated hours out of ${d.capacity} sample planning hours`)}"><span style="width:${Math.min(100,d.hours/d.capacity*100)}%"></span></div><p class="quiet-note">${d.capacity}h sample planning reference</p>`:'<p class="quiet-note">Planning capacity: not configured</p>'}<div class="workload-numbers"><span><strong>${d.jobs}</strong>Active projects</span><span><strong>${d.offers}</strong>Pending offers</span></div><p class="quiet-note">Calendar availability: not connected</p><button class="button button-small" data-action="show-designer" data-person="${e(d.id)}">View projects →</button></article>`).join('')}</div>
@@ -163,16 +166,17 @@ function updateChrome(path) {
   document.querySelectorAll('[data-nav]').forEach(a=>{const active=a.dataset.nav===nav;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   document.querySelector('#my-count').textContent=myProjects(state.projects,state.person).length || '';
   const banner=document.querySelector('#mode-banner');banner.classList.toggle('live',readonly());
-  banner.textContent=state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
-  document.querySelector('#connection-label').textContent=state.mode==='demo'?'Demo workspace':state.mode==='error'?'Connection unavailable':'Local DEV connection';
-  document.querySelector('#footer-mode').textContent=live()?'DEV saves enabled · Local testing only':readonly()?'Read-only DEV preview · Native flows unchanged':'Synthetic examples · No live submissions';
+  banner.textContent=authenticated&&state.actor?`Private DEV pilot · ${state.actor.name} · ${live()?'Saves to Smartsheet':'Read-only access'}`:state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
+  document.querySelector('#connection-label').textContent=state.mode==='demo'?'Demo workspace':state.mode==='error'?'Connection unavailable':authenticated?'Authenticated DEV pilot':'Local DEV connection';
+  document.querySelector('#footer-mode').textContent=authenticated?`Invited DEV pilot · ${live()?'Saves enabled':'Read-only'}`:live()?'DEV saves enabled · Local testing only':readonly()?'Read-only DEV preview · Native flows unchanged':'Synthetic examples · No live submissions';
   document.querySelector('#refresh-workspace').hidden=!connected;
   main.setAttribute('aria-busy',String(state.saving));
+  if(authenticated){document.querySelector('#preview-controls').hidden=true;document.querySelector('#pilot-identity').hidden=!state.actor;document.querySelector('#pilot-user-name').textContent=state.actor?`${state.actor.name} · ${state.actor.role}`:'';}
 }
 function render({focus=false}={}) {
   const path=route();updateChrome(path);
   if(state.mode==='loading'){main.innerHTML='<div class="loading-state">Loading the DEV workspace…</div>';return;}
-  if(state.mode==='error'){main.innerHTML=`${heading('The DEV connection is unavailable.','Reconnect and refresh to confirm the latest job values.')}<div class="notice notice-warning">${e(state.error)}</div><button class="button" data-action="reload">Try again</button>`;return;}
+  if(state.mode==='error'){main.innerHTML=`${heading('The DEV connection is unavailable.','Reconnect and refresh to confirm the latest job values.')}<div class="notice notice-warning">${e(state.error)}</div><button class="button" data-action="reload">Try again</button>${authenticated?'<a class="button button-primary" href="/auth/smartsheet/login">Sign in to Smartsheet</a>':''}`;return;}
   if(path==='/') main.innerHTML=renderHome();
   else if(['/my-work','/projects','/archive'].includes(path))main.innerHTML=renderCollection(path.slice(1));
   else if(path==='/new')main.innerHTML=renderNew();
@@ -181,17 +185,19 @@ function render({focus=false}={}) {
   else if(path.startsWith('/projects/'))main.innerHTML=renderDetail(path.split('/')[2],path.endsWith('/references'));
   else main.innerHTML=notFound();
   document.title=`${main.querySelector('h1')?.innerText.replace(/\s+/g,' ').trim() || 'Workspace'} · ORNL Graphics Portal`;
+  if(authenticated&&path==='/new'&&state.actor){for(const [id,value] of [['requestor',state.actor.name],['email',state.actor.id]]){const input=document.getElementById(id);if(input){input.value=value;input.readOnly=true;}}}
   if(focus) main.focus({preventScroll:true});
   if(path.endsWith('/references'))document.querySelector('#references')?.scrollIntoView({block:'start'});
 }
 function updateCollection() { const type=route().slice(1);const target=document.querySelector('#collection-results');if(target)target.innerHTML=collectionResults(type); }
 function applyWorkspace(data) {
   if(!['dev-readonly','dev-write'].includes(data.mode)||!Array.isArray(data.projects))throw new Error('Unexpected DEV response.');
+  if(authenticated){if(!data.actor?.id)throw new Error('The pilot session could not be verified.');state.actor=data.actor;state.person=data.actor.id;state.csrf=data.csrf;state.canCreate=!!data.canCreate;state.teamWorkload=data.teamWorkload||null;}
   state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
 }
 async function api(path, {method='GET',body,key,headers={}}={}) {
   if(config.apiBase!=='/api')throw new Error('The local gateway configuration is invalid.');
-  const response=await fetch('/api'+path,{method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)});
+  const response=await fetch((path.startsWith('/auth/')?'':'/api')+path,{method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':state.csrf||config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)});
   const data=await response.json();if(!response.ok)throw new Error(data.error||'The DEV operation could not be confirmed. Refresh and inspect the job.');
   return data;
 }
@@ -209,7 +215,7 @@ async function mutate(id, updater, change) {
   render();
 }
 async function accept(id,accepted) {
-  const p=findProject(id);if(!p||p.requestedDesigner!==state.person||readonly())throw new Error('Switch to the offered designer’s test view to respond.');
+  const p=findProject(id);if(!p||p.requestedDesigner!==state.person||readonly())throw new Error(authenticated?'Only the offered designer can respond.':'Switch to the offered designer’s test view to respond.');
   await mutate(id,job=>({...job,response:accepted?'accepted':'declined',stage:accepted?'Accepted':'New'}),{action:accepted?'accept':'decline'});
   toast(accepted?(live()?'Acceptance saved to Smartsheet. The native assignment formula controls My Work.':'Demo job accepted. It is now in My Work.'):(live()?'Decline saved to Smartsheet. The request is back with Graphics.':'Demo offer declined. The request is back with Graphics.'));
 }
@@ -234,7 +240,10 @@ async function previewFile(id,fileId) {
   else if(f.type==='text/plain') { const response=await fetch(url,{credentials:'same-origin'});if(!response.ok)throw new Error('The file could not be opened.');const text=await response.text();modal(f.name,`<pre>${e(text.slice(0,50000))}</pre>`,footer); }
   else modal(f.name,'<p>This file type is available to download. Inline preview is not enabled for this format.</p>',footer);
 }
-function about() { modal('About this prototype',`<p><strong>A separate proposal for a custom Graphics Portal.</strong> The public website uses fictional projects and people. It does not connect visitors to the native Smartsheet workspace.</p><ul><li>Try an employee request, switch demo designers, accept an offer and move work through its stages.</li><li>Each job has its own URL and reference section; there is no shared job selector.</li><li>Demo changes are held in this tab and reset on reload.</li><li>A separate local gateway can read approved DEV rows and, when explicitly started in DEV editing mode, save requests, edits and new attachments. It never deletes files or records.</li></ul><p>Public ORNL employee sign-in, multi-user role enforcement, AI, email, SCOUT and Dropbox are not connected. They need separate implementation and validation.</p><p>This is a design draft, not an approved production service.</p>`,`<button class="button button-small" data-action="reset-demo" ${state.mode!=='demo'?'disabled':''}>Reset demo workspace</button><button class="button button-primary button-small" data-action="close-dialog">Continue exploring</button>`); }
+function about() {
+  if(authenticated){modal('About the DEV pilot','<p>This invited pilot uses your Smartsheet login and your existing access to the DEV sheet. Your pilot role further limits the jobs and actions available to you.</p><p>Enabled saves update synthetic DEV jobs and add reference files. There are no delete operations. Native dashboard and workflow definitions are preserved.</p><p>General employee intake, AI, email notifications, calendar access, SCOUT and Dropbox remain pending. This is a temporary development pilot, not a production service.</p>');return;}
+  modal('About this prototype',`<p><strong>A separate proposal for a custom Graphics Portal.</strong> The public website uses fictional projects and people. It does not connect visitors to the native Smartsheet workspace.</p><ul><li>Try an employee request, switch demo designers, accept an offer and move work through its stages.</li><li>Each job has its own URL and reference section; there is no shared job selector.</li><li>Demo changes are held in this tab and reset on reload.</li><li>A separate local gateway can read approved DEV rows and, when explicitly started in DEV editing mode, save requests, edits and new attachments. It never deletes files or records.</li></ul><p>Public ORNL employee sign-in, AI, email, SCOUT and Dropbox are not connected. A separate invited OAuth pilot is available through its protected server.</p><p>This is a design draft, not an approved production service.</p>`,`<button class="button button-small" data-action="reset-demo" ${state.mode!=='demo'?'disabled':''}>Reset demo workspace</button><button class="button button-primary button-small" data-action="close-dialog">Continue exploring</button>`);
+}
 document.addEventListener('click',async event=>{
   if(event.target.closest('a[href="#main"]')){event.preventDefault();main.focus();return;}
   const button=event.target.closest('[data-action]');if(!button)return;
@@ -244,19 +253,20 @@ document.addEventListener('click',async event=>{
     if(action==='close-dialog'){dialog.close();return;}
     if(action==='about'){about();return;}
     if(action==='reload'){location.reload();return;}
+    if(action==='sign-out'){await api('/auth/logout',{method:'POST',body:{}});location.href='/';return;}
     if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');applyWorkspace(await api('/projects?refresh=1'));render();toast('Latest DEV values loaded.');return;}
-    if(action==='reset-demo'){if(state.mode!=='demo')return;for(const f of state.files.values())URL.revokeObjectURL(f.url);state.files.clear();state.projects=demoProjects();dialog.close();if(route()!=='/')location.hash='#/';else render();toast('Synthetic workspace reset.');return;}
+    if(action==='reset-demo'){if(state.mode!=='demo'||authenticated)return;for(const f of state.files.values())URL.revokeObjectURL(f.url);state.files.clear();state.projects=demoProjects();dialog.close();if(route()!=='/')location.hash='#/';else render();toast('Synthetic workspace reset.');return;}
     if(action==='board-view'||action==='list-view'){state.view=action==='board-view'?'board':'list';render();return;}
     if(action==='show-designer'){state.query='';state.filterStage='';state.filterDesigner=button.dataset.person;state.lastWorkspace='projects';location.hash='#/projects';return;}
     if(action==='accept'||action==='decline'){await accept(id,action==='accept');return;}
     if(action==='edit-project'){editProject(id);return;}
     if(action==='preview-file'){await previewFile(id,button.dataset.file);return;}
-    if(action==='offer'){const designer=document.querySelector('#offer-designer').value;if(state.person!=='coordinator'||!person(designer))throw new Error('Choose a valid demo designer.');await mutate(id,p=>({...p,requestedDesigner:designer,response:'',stage:'Assigned'}),{action:'offer',designer});toast(live()?'Designer offer saved to Smartsheet. No email was sent.':'Demo offer recorded. Switch to that designer to accept. No email was sent.');return;}
+    if(action==='offer'){const designer=document.querySelector('#offer-designer').value;if(!isCoordinator()||!person(designer))throw new Error('Choose a valid demo designer.');await mutate(id,p=>({...p,requestedDesigner:designer,response:'',stage:'Assigned'}),{action:'offer',designer});toast(live()?'Designer offer saved to Smartsheet. No email was sent.':'Demo offer recorded. Switch to that designer to accept. No email was sent.');return;}
     if(action==='save-stage'){const p=findProject(id);if(!p||!canEdit(p))throw new Error('This project cannot be changed in the current preview.');const stage=document.querySelector('#job-stage').value;await mutate(id,p=>moveProject(p,stage),{action:'stage',stage});toast(`${live()?'Smartsheet':'Demo'} stage updated to ${stage}.`);}
   }catch(error){toast(error.message||'The action could not be completed.',true);}
 });
 document.addEventListener('change',event=>{
-  if(event.target.id==='preview-user'){state.person=event.target.value;state.query='';state.filterDesigner='';state.filterStage='';render();return;}
+  if(event.target.id==='preview-user'){if(authenticated)return;state.person=event.target.value;state.query='';state.filterDesigner='';state.filterStage='';render();return;}
   if(event.target.id==='designer-filter'){state.filterDesigner=event.target.value;updateCollection();}
   if(event.target.id==='stage-filter'){state.filterStage=event.target.value;updateCollection();}
 });
@@ -315,7 +325,7 @@ async function initialize(){
   if(connected){
     try{
       applyWorkspace(await api('/projects?refresh=1'));
-      state.person='coordinator';
+      if(!authenticated)state.person='coordinator';
       document.querySelector('#preview-user').innerHTML='<option value="coordinator">Graphics coordinator · Local test</option>'+state.designers.map(d=>`<option value="${e(d.id)}">${e(d.name)} · Local test</option>`).join('')+'<option value="requester">Employee / requester · Local test</option>';
       document.querySelector('#preview-help').textContent=live()?'Local test controls. This is not employee authentication. Saves affect the DEV sheet.':'Local display filter only. Not an authenticated user session.';
     }catch(error){state.mode='error';state.projects=[];state.designers=[];state.error=error.message;}

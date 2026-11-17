@@ -576,7 +576,13 @@ def main():
         value['clientId'] = value.get('clientId') or client_id
         return PilotConfig(value)
     config = load()
-    secret = getpass.getpass('Smartsheet OAuth app secret (memory only, never saved): ')
+    print('Copy the App secret from Smartsheet, paste it at the next prompt, then press Return.',flush=True)
+    print('No characters or dots will appear while you paste/type. Ctrl+C cancels.',flush=True)
+    secret = ''
+    while not secret.strip():
+        secret = getpass.getpass('Smartsheet OAuth app secret (hidden; memory only): ')
+        if not secret.strip():
+            print('No secret received. Paste the App secret, then press Return. Nothing has started yet.',flush=True)
     app = create_app(config,secret,reload_config=load)
     from waitress import serve
     print('Authenticated pilot ready behind '+config.origin,flush=True)

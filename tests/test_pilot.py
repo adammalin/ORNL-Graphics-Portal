@@ -1,12 +1,16 @@
 """OAuth HTTP and cross-user authorization boundaries, using a synthetic API."""
 import copy
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
+import json
 from pathlib import Path
 import secrets
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 HAS_FLASK = importlib.util.find_spec('flask') is not None
@@ -271,6 +275,20 @@ class PilotTests(unittest.TestCase):
         invalid = {**self.value, 'expiresAt': '2026-12-01T12:00:00'}
         with self.assertRaises(WriteError): PilotConfig(invalid)
         self.assertEqual(PilotConfig({**self.value, 'publicOrigin': self.origin + ':443'}).origin, self.origin)
+
+    def test_launcher_retries_empty_secret_without_echoing_it(self):
+        from backend.pilot import main
+        config_path = Path(self.tmp.name) / 'config.json'
+        config_path.write_text(json.dumps(self.value))
+        output = io.StringIO()
+        with patch('sys.argv', ['pilot', '--config', str(config_path)]), \
+             patch('backend.pilot.getpass.getpass', side_effect=['', 'synthetic-app-secret']), \
+             patch('waitress.serve') as serve, redirect_stdout(output):
+            main()
+        self.assertIn('No secret received.', output.getvalue())
+        self.assertIn('Authenticated pilot ready', output.getvalue())
+        self.assertNotIn('synthetic-app-secret', output.getvalue())
+        self.assertEqual(serve.call_args.kwargs['host'], '127.0.0.1')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ornl-graphics-portal:capabilities:1.0",
+  "title": "Authenticated portal capabilities, version 1.0",
+  "description": "Browser-authenticated in Stage 0. This endpoint does not issue an agent grant or enable MCP.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "actor", "canCreate", "accessLevel", "jobActionsAreScoped", "features", "limits", "constraints"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "role"],
+      "properties": {
+        "id": { "type": "string", "format": "email" },
+        "name": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["designer", "coordinator"] }
+      }
+    },
+    "canCreate": { "type": "boolean" },
+    "accessLevel": { "type": "string" },
+    "jobActionsAreScoped": { "const": true },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aiContext", "aiDrafts", "agentApi", "mcp", "businessFieldApply", "nativePublication", "modelRunner", "unattendedAi", "nativeAiIntegration"],
+      "properties": {
+        "aiContext": { "type": "boolean" },
+        "aiDrafts": { "type": "boolean" },
+        "agentApi": { "type": "boolean" },
+        "mcp": { "type": "boolean" },
+        "businessFieldApply": { "type": "boolean" },
+        "nativePublication": { "type": "boolean" },
+        "modelRunner": { "type": "boolean" },
+        "unattendedAi": { "type": "boolean" },
+        "nativeAiIntegration": { "type": "boolean" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attachmentBytes"],
+      "properties": { "attachmentBytes": { "type": "integer", "minimum": 1 } }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deletion", "sharedTokenFallback"],
+      "properties": {
+        "deletion": { "const": false },
+        "sharedTokenFallback": { "const": false }
+      }
+    }
+  }
+}

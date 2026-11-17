@@ -68,6 +68,9 @@ class DevStore:
     def db(self):
         return sqlite3.connect(str(self.path), timeout=10)
 
+    def _write(self, *args, **kwargs):
+        return self.reader._write(*args, **kwargs)
+
     def validate_source(self):
         r = self.reader
         r.projects(force=True)
@@ -233,7 +236,7 @@ class DevStore:
                 values.update({'DEV Test Record': True, 'Project Stage': 'New'})
                 payload = [{'toBottom': True, 'cells': self.cells(columns, values)}]
                 self.begin(key, fingerprint)
-                response = self.reader._write('POST', f'/sheets/{self.reader.sheet_id}/rows', payload, 'new-dev-request')
+                response = self._write('POST', f'/sheets/{self.reader.sheet_id}/rows', payload, 'new-dev-request')
                 row = response['result'][0]
                 row_id = str(row['id'])
                 # Save the row ID immediately, before any dependent GET/readback.
@@ -277,7 +280,7 @@ class DevStore:
                     raise WriteError('Unknown or malformed project action.')
                 payload = [{'id': row['id'], 'cells': self.cells(columns, values, row)}]
                 self.begin(key, fingerprint)
-                self.reader._write('PUT', f'/sheets/{self.reader.sheet_id}/rows', payload, 'dev-job-' + action)
+                self._write('PUT', f'/sheets/{self.reader.sheet_id}/rows', payload, 'dev-job-' + action)
                 self.touched.setdefault(str(row['id']), set()).update(values)
                 self.finish(key, {'jobId': job_id})
             return self.result(job_id)
@@ -323,6 +326,6 @@ class DevStore:
             row = self.row(job_id, expected)
             self.begin(key, fingerprint)
             disposition = f'attachment; filename="{name}"' if name.isascii() else "attachment; filename*=UTF-8''" + quote(name, safe='')
-            self.reader._write('POST', f'/sheets/{self.reader.sheet_id}/rows/{row["id"]}/attachments', content, 'dev-reference-upload', {'Content-Type': mime, 'Content-Disposition': disposition})
+            self._write('POST', f'/sheets/{self.reader.sheet_id}/rows/{row["id"]}/attachments', content, 'dev-reference-upload', {'Content-Type': mime, 'Content-Disposition': disposition})
             self.finish(key, {'jobId': job_id})
             return self.result(job_id)

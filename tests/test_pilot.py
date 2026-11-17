@@ -22,7 +22,7 @@ if HAS_FLASK:
 
 
 @unittest.skipUnless(HAS_FLASK, 'Install requirements-pilot.txt to run OAuth pilot tests.')
-class PilotTests(unittest.TestCase):
+class PilotTestCase(unittest.TestCase):
     origin = 'https://pilot.example.org'
 
     def setUp(self):
@@ -112,6 +112,9 @@ class PilotTests(unittest.TestCase):
         response = self.action(coord, 'offer', designer=target)
         self.assertEqual(response.status_code, 200, response.get_json())
 
+
+
+class PilotTests(PilotTestCase):
     def test_anonymous_routes_and_static_allowlist_never_expose_private_data(self):
         client = self.app.test_client()
         home = self.get(client, '/')

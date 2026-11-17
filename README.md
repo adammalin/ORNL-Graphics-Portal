@@ -53,6 +53,8 @@ For **DEV saves**, run `./start-dev.command` using the private `.local/dev-confi
 
 The [detailed implementation specification](docs/ai-agent-implementation-spec.md) starts with users' existing Codex/browser agents, followed by scoped API/MCP tools. Smartsheet AI and a central model API key are not prerequisites for that agent-assisted path. It defines shared authorization, job context, reviewable briefs and field proposals, reference coverage, contracts, acceptance tests and a separate later phase for unattended processing. The linked schema, fictional example and prompt are design artifacts; they do not enable these features.
 
+[Stage 0 implementation and validation](docs/ai-stage-0-validation.md) extracts the shared job service, adds immutable principal snapshots, private-state migrations and a browser-authenticated capability endpoint. AI analysis, draft UI, agent bearer authentication and MCP remain disabled.
+
 ## GitHub Pages
 
 Set Settings → Pages → Source to **GitHub Actions**. Merging into `main` runs checks and deploys the static `web/` folder. Relative asset URLs and hash routes work under `/ORNL-Graphics-Portal/` without a rewrite service.

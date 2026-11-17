@@ -307,7 +307,7 @@ class MicrosoftIntakeTests(PilotTestCase):
         from backend.pilot import main
         config_path=Path(self.tmp.name)/'microsoft-config.json'
         config_path.write_text(json.dumps(self.value))
-        with patch('sys.argv',['pilot','--config',str(config_path)]), \
+        with patch('sys.argv',['pilot','--config',str(config_path),'--port','0']), \
              patch('backend.pilot.sys.version_info',(3,9)), \
              patch('backend.pilot.getpass.getpass') as prompt:
             with self.assertRaises(WriteError) as error:main()

@@ -8,3 +8,5 @@ node_modules/
 .local/
 artifacts/
 *.log
+tmp/pdfs/
+output/pdf/

@@ -284,14 +284,41 @@ class PilotTests(PilotTestCase):
         config_path = Path(self.tmp.name) / 'config.json'
         config_path.write_text(json.dumps(self.value))
         output = io.StringIO()
-        with patch('sys.argv', ['pilot', '--config', str(config_path)]), \
-             patch('backend.pilot.getpass.getpass', side_effect=['', 'synthetic-app-secret']), \
+        with patch('sys.argv', ['pilot', '--config', str(config_path), '--secret-source', 'prompt', '--port', '0']), \
+             patch('backend.pilot_credentials.sys.stdin.isatty', return_value=True), \
+             patch('backend.pilot_credentials.getpass.getpass', side_effect=['', 'synthetic-app-secret']), \
              patch('waitress.serve') as serve, redirect_stdout(output):
             main()
         self.assertIn('No secret received.', output.getvalue())
         self.assertIn('Authenticated pilot ready', output.getvalue())
         self.assertNotIn('synthetic-app-secret', output.getvalue())
         self.assertEqual(serve.call_args.kwargs['host'], '127.0.0.1')
+
+    def test_macos_launcher_uses_saved_keychain_secret_without_prompt(self):
+        from backend.pilot import main
+        config_path = Path(self.tmp.name) / 'config.json'
+        config_path.write_text(json.dumps(self.value))
+        output = io.StringIO()
+        with patch('sys.argv', ['pilot', '--config', str(config_path), '--port', '0']), \
+             patch('backend.pilot.sys.platform', 'darwin'), \
+             patch('backend.pilot_credentials.read_keychain', return_value='synthetic-keychain-secret') as read, \
+             patch('backend.pilot_credentials.getpass.getpass') as prompt, \
+             patch('waitress.serve') as serve, redirect_stdout(output):
+            main()
+        read.assert_called_once_with(self.value['clientId'])
+        prompt.assert_not_called()
+        self.assertIn('Authenticated pilot ready', output.getvalue())
+        self.assertNotIn('synthetic-keychain-secret', output.getvalue())
+        self.assertEqual(serve.call_args.kwargs['host'], '127.0.0.1')
+
+    def test_busy_port_stops_before_reading_credentials(self):
+        from backend.pilot import main
+        with patch('sys.argv', ['pilot']), \
+             patch('backend.pilot.socket.socket', side_effect=OSError('busy')), \
+             patch('backend.pilot.load_secret') as load:
+            with self.assertRaisesRegex(WriteError, 'already in use'):
+                main()
+        load.assert_not_called()
 
 
 if __name__ == '__main__':

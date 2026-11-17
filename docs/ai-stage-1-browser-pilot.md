@@ -90,7 +90,7 @@ Business-field apply remains Stage 3; MCP/agent grants remain Stage 2. Native pu
 
 Set `ai.browserPilotEnabled` false to stop AI access while preserving private data and ordinary job behavior. Feature checks reload on requests; refresh the page to remove active controls. Do not erase the private database or restore an older sheet to roll back AI.
 
-Migration 2 is deliberately rejected by older application code that knows only migration 1. The safest rollback is to keep the compatible Stage 1 build with AI disabled. A code downgrade requires a planned, compatible metadata migration/restore that preserves all native save receipts and identities; do not discard newer receipts or blindly reopen uncertain native writes.
+Migration 2 is deliberately rejected by older application code that knows only migration 1. The onboarding/tracking extension adds migration 3, which schema-2 builds also reject; retain a schema-3-compatible build and all newer receipts when rolling back that extension. The safest rollback is to keep the compatible Stage 1 build with AI disabled. A code downgrade requires a planned, compatible metadata migration/restore that preserves all native save receipts and identities; do not discard newer receipts or blindly reopen uncertain native writes.
 
 ## Second real tester checklist
 

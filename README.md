@@ -70,3 +70,5 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 [Laptop demo startup guide](docs/demo-startup.md): save the Smartsheet App secret once with `save-pilot-credentials.command`, then use `start-pilot.command` for automatic local Keychain retrieval. Includes the Developer Tools location, tunnel/server steps and an explanation of repeated consent. [Launcher validation](docs/demo-startup-validation.md) records the tested boundaries.
 
 [Selected copied-project preview](docs/copied-project-preview.md) adds read-only projects from the existing DEV copy alongside editable test records. A separate private row allowlist preserves the write and AI boundaries; copied projects use existing account visibility rules.
+
+[Onboarding and requester tracking](docs/onboarding-and-requester-tracking.md) adds once-per-account tutorials with fictional practice, manual replay through Help, and owner-only My Requests for new Microsoft submissions. Requester tracking stays disabled until the Microsoft integration is approved and configured. [Validation evidence](docs/onboarding-tracking-validation.md) separates isolated tests from the running staff pilot.

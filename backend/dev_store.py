@@ -321,11 +321,15 @@ class DevStore:
             with self.db() as db:
                 prior = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?', (self.reader.sheet_id, key)).fetchone()
             if prior:
-                return self.result(self.begin(key, fingerprint)['jobId'])
+                receipt = self.begin(key, fingerprint)
+                return {**self.result(receipt['jobId']), 'attachmentId': receipt.get('attachmentId')}
             self.validate_source()
             row = self.row(job_id, expected)
             self.begin(key, fingerprint)
             disposition = f'attachment; filename="{name}"' if name.isascii() else "attachment; filename*=UTF-8''" + quote(name, safe='')
-            self._write('POST', f'/sheets/{self.reader.sheet_id}/rows/{row["id"]}/attachments', content, 'dev-reference-upload', {'Content-Type': mime, 'Content-Disposition': disposition})
-            self.finish(key, {'jobId': job_id})
-            return self.result(job_id)
+            response = self._write('POST', f'/sheets/{self.reader.sheet_id}/rows/{row["id"]}/attachments', content, 'dev-reference-upload', {'Content-Type': mime, 'Content-Disposition': disposition})
+            native = response.get('result', {})
+            attachment_id = str(native.get('id', '')) if isinstance(native, dict) else ''
+            attachment_id = attachment_id if attachment_id.isdigit() else None
+            self.finish(key, {'jobId': job_id, 'attachmentId': attachment_id})
+            return {**self.result(job_id), 'attachmentId': attachment_id}

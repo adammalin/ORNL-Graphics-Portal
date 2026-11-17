@@ -34,6 +34,7 @@ try:
     from backend.ai_service import AiService, settings as ai_settings
     from backend.ai_validation import strict_json
     from backend.pilot_credentials import CredentialError, client_id_from_config, load_secret
+    from backend.onboarding import Onboarding
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
     from dev_store import WriteError
@@ -44,6 +45,7 @@ except ImportError:
     from ai_service import AiService, settings as ai_settings
     from ai_validation import strict_json
     from pilot_credentials import CredentialError, client_id_from_config, load_secret
+    from onboarding import Onboarding
 
 SESSION_COOKIE = '__Host-graphics_pilot'
 LOGIN_COOKIE = '__Host-graphics_login'
@@ -316,6 +318,8 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     intake = (employee_intake.IntakeService(runtime, microsoft_secret, intake_token, microsoft_oauth)
               if employee_intake.settings(config) else None)
     app.extensions['employee_intake'] = intake
+    runtime.intake = intake
+    tutorial = Onboarding(runtime)
 
     def requester_service():
         if intake is None:
@@ -396,6 +400,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         return response
 
     @app.get('/request')
+    @app.get('/my-requests')
     def requester_page():
         service = requester_service()
         try:
@@ -418,6 +423,54 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     @app.get('/api/intake/requests/<receipt>')
     def employee_receipt(receipt):
         return jsonify(requester_service().receipt(request.cookies.get(employee_intake.COOKIE), receipt))
+
+    @app.get('/api/intake/my-requests')
+    def my_requests():
+        return jsonify(requester_service().tracking.list(request.cookies.get(employee_intake.COOKIE), offset()))
+
+    @app.get('/api/intake/my-requests/<receipt>')
+    def my_request(receipt):
+        return jsonify(requester_service().tracking.get(request.cookies.get(employee_intake.COOKIE), receipt))
+
+    @app.get('/api/intake/my-requests/<receipt>/attachments/<attachment>')
+    def requester_attachment(receipt,attachment):
+        content,mime,name = requester_service().tracking.attachment(request.cookies.get(employee_intake.COOKIE),receipt,attachment)
+        response = Response(content,content_type='application/octet-stream')
+        response.headers['Content-Disposition'] = "attachment; filename*=UTF-8''"+quote(name,safe='')
+        return response
+
+    def tutorial_identity(employee=False):
+        if employee:
+            actor = requester_service().session(request.cookies.get(employee_intake.COOKIE)).actor
+            return 'microsoft:'+actor.key, 'requester', 'requester'
+        actor = signed_in().actor
+        return 'smartsheet:'+actor.user_id, 'staff', 'coordinator' if actor.role=='coordinator' else 'designer'
+
+    def tutorial_response(employee=False):
+        principal,kind,default = tutorial_identity(employee)
+        if request.method=='GET':
+            return jsonify(tutorial.read(principal,kind,default))
+        if request.content_length is None or request.content_length>4096:
+            raise WriteError('The tutorial update is too large.',413)
+        return jsonify(tutorial.write(principal,kind,default,request.get_json(silent=True)))
+
+    @app.route('/api/onboarding',methods=['GET','POST'])
+    def staff_tutorial():
+        return tutorial_response()
+
+    @app.route('/api/intake/onboarding',methods=['GET','POST'])
+    def employee_tutorial():
+        return tutorial_response(True)
+
+    @app.get('/api/v1/jobs/<job>/requester-resources')
+    def requester_resources(job):
+        return jsonify(requester_service().tracking.staff_resources(request.cookies.get(SESSION_COOKIE),job))
+
+    @app.post('/api/v1/jobs/<job>/requester-resources')
+    def share_requester_resource(job):
+        if request.content_length is None or request.content_length>4096:
+            raise WriteError('The visibility update is too large.',413)
+        return jsonify(requester_service().tracking.share(request.cookies.get(SESSION_COOKIE),job,request.get_json(silent=True)))
 
     @app.post('/api/intake/requests/<receipt>/attachments')
     def employee_upload(receipt):
@@ -558,7 +611,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

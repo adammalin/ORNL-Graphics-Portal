@@ -28,7 +28,7 @@ const dialog = document.querySelector('#dialog');
 const config = window.PORTAL_CONFIG || { dataMode:'demo' };
 const authenticated = config.dataMode === 'pilot';
 const connected = authenticated || ['dev-readonly','dev-write'].includes(config.dataMode);
-const state = { aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
+const state = { trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
 const live = () => state.mode === 'dev-write';
 const readonly = () => !['demo','dev-write'].includes(state.mode);
 const person = id => state.designers.find(d => d.id === id);
@@ -104,7 +104,7 @@ function renderCollection(type) {
 }
 function fileRows(p) {
   const files=uniqueAttachments(p);
-  return `${files.length?`<div class="files">${files.map(f=>`<article class="file"><span class="file-icon">${icon('file')}</span><div class="file-info"><strong>${e(f.name)}</strong><small>${e(f.size||'Reference file')}${f.sessionOnly?' · This tab only':''}</small></div><div class="file-actions"><button data-action="preview-file" data-id="${e(p.id)}" data-file="${e(f.id)}">Preview</button><a href="${e(fileUrl(f,true)||'#')}" download>Download ↓</a></div></article>`).join('')}</div>`:'<p class="quiet-note">No files attached to this project.</p>'}
+  return `${files.length?`<div class="files">${files.map(f=>`<article class="file"><span class="file-icon">${icon('file')}</span><div class="file-info"><strong>${e(f.name)}</strong><small>${e(f.size||'Reference file')}${f.sessionOnly?' · This tab only':''}</small></div><div class="file-actions"><button data-action="preview-file" data-id="${e(p.id)}" data-file="${e(f.id)}">Preview</button><a href="${e(fileUrl(f,true)||'#')}" download>Download ↓</a>${state.trackingAvailable&&p.requesterTrackable&&canEdit(p)?`<button data-action="share-requester" data-id="${e(p.id)}" data-file="${e(f.id)}">Requester access</button>`:''}</div></article>`).join('')}</div>`:'<p class="quiet-note">No files attached to this project.</p>'}
     ${(p.references||[]).length?`<div class="reference-links">${p.references.map((r,i)=>safeUrl(r.url)?`<a href="${e(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer">${icon('link')}${e(r.label||`Reference link ${i+1}`)} ↗</a>`:'').join('')}</div>`:''}`;
 }
 function fileUrl(f,download=false) {
@@ -173,6 +173,7 @@ function updateChrome(path) {
   document.querySelector('#connection-label').textContent=state.mode==='demo'?'Demo workspace':state.mode==='error'?'Connection unavailable':authenticated?'Authenticated DEV pilot':'Local DEV connection';
   document.querySelector('#footer-mode').textContent=authenticated?`Invited DEV pilot · ${live()?'Saves enabled':'Read-only'}`:live()?'DEV saves enabled · Local testing only':readonly()?'Read-only DEV preview · Native flows unchanged':'Synthetic examples · No live submissions';
   document.querySelector('#refresh-workspace').hidden=!connected;
+  document.querySelector('#portal-help').disabled=state.mode==='loading';
   main.setAttribute('aria-busy',String(state.saving));
   if(authenticated){document.querySelector('#preview-controls').hidden=true;document.querySelector('#pilot-identity').hidden=!state.actor;document.querySelector('#pilot-user-name').textContent=state.actor?`${state.actor.name} · ${state.actor.role}`:'';}
 }
@@ -256,6 +257,19 @@ document.addEventListener('click',async event=>{
     const {action,id}=button.dataset;
     if(action==='close-dialog'){dialog.close();return;}
     if(action==='about'){about();return;}
+    if(action==='help'){modal('Help & tutorials','<p>Learn the designer or coordinator workflow with fictional practice jobs. Your actual account permissions stay the same.</p><button class="button button-primary" data-action="open-tutorial">Tutorials</button><p>Open the full walkthrough or resume a saved chapter. Practice actions never change live projects.</p>');return;}
+    if(action==='open-tutorial'){dialog.close();await (await ensureTutorial()).open();return;}
+    if(action==='share-requester'){
+      const job=findProject(id),file=job?.attachments.find(f=>f.id===button.dataset.file);
+      if(!job||!file||!canEdit(job)||!job.requesterTrackable)throw new Error('Requester file access is not available for this project.');
+      const access=await api('/v1/jobs/'+encodeURIComponent(id)+'/requester-resources');
+      const resource=access.resources.find(r=>r.id===file.id);
+      if(resource?.category==='submitted'){modal('Requester file access',`<p>${e(file.name)}</p><p>The requester already has access to their submitted file.</p>`);return;}
+      const visible=resource?.visible===true;
+      modal('Requester file access',`<p><strong>${e(file.name)}</strong></p><p>${visible?'This file is available to the requester. Stop sharing withdraws that access without deleting it.':'Share the current file version with the verified owner of this request. Other internal files stay private.'}</p><p>No email is sent and native Smartsheet sharing is unchanged.</p><button class="button button-primary" data-action="confirm-requester-visibility" data-id="${e(id)}" data-file="${e(file.id)}" data-revision="${e(job.revision)}" data-visible="${visible?'false':'true'}">${visible?'Stop sharing':'Share with requester'}</button>`);return;
+    }
+    if(action==='confirm-requester-visibility'){await busy(()=>api('/v1/jobs/'+encodeURIComponent(id)+'/requester-resources',{method:'POST',body:{attachmentId:button.dataset.file,visible:button.dataset.visible==='true',revision:button.dataset.revision}}));dialog.close();toast('Requester file access updated.');return;}
+
     if(action==='reload'){location.reload();return;}
     if(action==='sign-out'){await api('/auth/logout',{method:'POST',body:{}});location.href='/';return;}
     if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');applyWorkspace(await api('/projects?refresh=1'));render();toast('Latest DEV values loaded.');return;}
@@ -330,12 +344,18 @@ async function initialize(){
   if(connected){
     try{
       applyWorkspace(await api('/projects?refresh=1'));
-      if(authenticated){try{const capabilities=await api('/v1/capabilities');if(capabilities.features.aiContext)state.aiModule=await import('./ai-panel.js');}catch{/* Older running pilots keep their existing UI until restart. */}}
+      if(authenticated){try{const capabilities=await api('/v1/capabilities');state.trackingAvailable=capabilities.requesterTrackingAvailable===true;if(capabilities.features.aiContext)state.aiModule=await import('./ai-panel.js');}catch{/* Older running pilots keep their existing UI until restart. */}}
       if(!authenticated)state.person='coordinator';
       document.querySelector('#preview-user').innerHTML='<option value="coordinator">Graphics coordinator · Local test</option>'+state.designers.map(d=>`<option value="${e(d.id)}">${e(d.name)} · Local test</option>`).join('')+'<option value="requester">Employee / requester · Local test</option>';
       document.querySelector('#preview-help').textContent=live()?'Local test controls. This is not employee authentication. Saves affect the DEV sheet.':'Local display filter only. Not an authenticated user session.';
     }catch(error){state.mode='error';state.projects=[];state.designers=[];state.error=error.message;}
   }
   render();
+  if(authenticated&&state.mode!=='error'){try{await (await ensureTutorial()).initialize();}catch{/* Existing work remains usable if tutorial preferences are unavailable. */}}
+}
+let tutorialInstance;
+async function ensureTutorial(){
+  if(!tutorialInstance){const module=await import('./tutorial.js');tutorialInstance=module.createTutorial({kind:authenticated?'staff':'demo',role:state.actor?.role||'designer',aiAvailable:!!state.aiModule,trackingAvailable:state.trackingAvailable,request:authenticated?options=>api('/onboarding',options):null});}
+  return tutorialInstance;
 }
 render();initialize();

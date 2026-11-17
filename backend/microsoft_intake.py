@@ -18,11 +18,13 @@ try:
     from backend.job_service import PilotStore, KEY, WRITABLE_ACCESS
     from backend.principals import Actor
     from backend.server import NoRedirect
+    from backend.requester_tracking import RequestTracking
 except ImportError:
     from dev_store import WriteError, revision
     from job_service import PilotStore, KEY, WRITABLE_ACCESS
     from principals import Actor
     from server import NoRedirect
+    from requester_tracking import RequestTracking
 
 COOKIE = '__Host-graphics_requester'
 LOGIN_COOKIE = '__Host-graphics_microsoft_login'
@@ -150,6 +152,8 @@ class IntakeService:
             db.execute('CREATE TABLE IF NOT EXISTS employee_intake_audit '
                        '(at REAL NOT NULL, owner TEXT NOT NULL, action TEXT NOT NULL, '
                        'receipt TEXT NOT NULL, outcome TEXT NOT NULL)')
+            db.execute('CREATE INDEX IF NOT EXISTS employee_receipt_job ON employee_intake_receipts(sheet,job)')
+        self.tracking = RequestTracking(self)
 
     def active(self):
         cfg = self.runtime.active_config()
@@ -319,6 +323,8 @@ class IntakeService:
                     project = next(p for p in result['projects'] if p['id'] == result['jobId'])
                     db.execute('UPDATE employee_intake_receipts SET job=?,title=COALESCE(title,?) WHERE receipt=? AND owner=?',
                                (result['jobId'], project['title'], receipt, actor.key))
+                    db.execute('INSERT OR IGNORE INTO employee_request_snapshots VALUES (?,?,?)',
+                               (receipt,project['_rowId'],json.dumps(body['fields'])))
                 self.audit(actor, 'create', receipt, 'success')
                 return self.receipt(sid, receipt)
             except Exception:
@@ -341,8 +347,13 @@ class IntakeService:
             if not replay and (project.get('stage') != 'New' or time.time() - created > 86400 or len(row.get('attachments', [])) >= 10):
                 raise WriteError('Reference uploads are closed for this submission. Contact Creative Services.', 403)
             with self.reader.store.authorized_writes(lambda: self.guard(sid, actor)):
-                self.reader.store.upload(key, job, expected, name, mime, content)
+                result = self.reader.store.upload(key, job, expected, name, mime, content)
             with self.runtime.db() as db:
                 db.execute('INSERT OR IGNORE INTO employee_intake_files VALUES (?,?,?)', (receipt, key, name))
+                if result.get('attachmentId'):
+                    from datetime import datetime, timezone
+                    db.execute('INSERT OR IGNORE INTO employee_request_resources VALUES (?,?,?,?,?,?,?)',
+                               (receipt,result['attachmentId'],'submitted',hashlib.sha256(content).hexdigest(),1,
+                                actor.key,datetime.now(timezone.utc).isoformat()))
             self.audit(actor, 'upload', receipt, 'success')
             return self.receipt(sid, receipt)

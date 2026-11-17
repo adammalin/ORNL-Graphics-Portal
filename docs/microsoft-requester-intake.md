@@ -4,7 +4,7 @@ Status: implemented for local qualification; **disabled in the running pilot pen
 
 ## Experience and data flow
 
-Employees open `/request`, sign in with the organization's Microsoft account and complete a form. They do not need a Smartsheet account. Name and contact email come from Microsoft Graph; department is prefilled and editable. The form preserves the description, deliverables, audience, specifications, links and additional notes. The backend creates a New DEV request and adds reference files to that row. The receipt shows the generated job number, original title and requester-uploaded filenames, with no link into the sheet. References added later by the Graphics team are not exposed in the employee receipt.
+Employees open `/request`, sign in with the organization's Microsoft account and complete a form. They do not need a Smartsheet account. Name and contact email come from Microsoft Graph; department is prefilled and editable. The form preserves the description, deliverables, audience, specifications, links and additional notes. The backend creates a New DEV request and adds reference files to that row. The receipt shows the generated job number, original title and requester-uploaded filenames, with no link into the sheet. References added later by the Graphics team remain private unless authorized staff explicitly share their current content with the requester through the new tracking controls. See [onboarding and requester tracking](onboarding-and-requester-tracking.md).
 
 Designers and coordinators continue to use their own Smartsheet OAuth sessions. Coordinators see new DEV requests in the existing project list and can offer them to a designer. Acceptance and subsequent work stay in that workspace. The employee integration credential is never used as a fallback for a designer's failed authorization.
 
@@ -52,7 +52,7 @@ The adapter calls only `GET /v1.0/me?$select=id,displayName,mail,department,user
 
 Use a separately approved Smartsheet integration identity with edit access to the **existing approved DEV sheet only**. Pin its immutable user ID as `integrationUserId`. Supply its token at the hidden local prompt. The server verifies the token's actual account ID on startup and refuses a mismatch. Do not put it in a config file or browser.
 
-Smartsheet's credential permissions may be broader than create-only. The portal narrows its employee-facing operations to creating requests and adding references to requests owned by that Microsoft principal. It exposes no generic Smartsheet proxy, row edits, assignment, deletion, attachment replacement, existing-job search, sheet data dump or attachment downloads through employee intake. Native direct access outside this portal remains governed separately by Smartsheet.
+Smartsheet's credential permissions may be broader than create-only. The portal narrows its employee-facing operations to creating requests and adding references to requests owned by that Microsoft principal. It exposes no generic Smartsheet proxy, row edits, assignment, deletion, attachment replacement, arbitrary existing-job search or sheet data dump. The owner-only tracking extension reads current status for newly submitted, permanently bound requests and permits hash-bound downloads of their submitted files or files explicitly shared by authorized staff. Its integration account therefore requires approved source read access as well as submission access. Native direct access outside this portal remains governed separately by Smartsheet.
 
 The same exact DEV sheet/filter validation, disabled native automation checks, schema/formula guards, workflow review expiry and global write switch still apply. No workflow is enabled or modified by this implementation. All new rows are marked DEV, prefixed `[DEV PORTAL]`, and start at New. The separate employee service shares the designer service's per-sheet process lock.
 
@@ -82,7 +82,7 @@ Run `./start-pilot.command`. When the feature is configured, the launcher asks f
 2. New Microsoft intake application secret.
 3. Approved intake integration Smartsheet token.
 
-All three remain in process memory. Restarting signs out both types of sessions. Preserve the existing private SQLite state and config. No credentials are written there. The new additive receipt table binds a random receipt to the Microsoft tenant/object ID, source sheet, operation key and generated job. A separate audit table records identity, action, receipt and outcome, not full request text or tokens. Protect and back up this state under the same private-state policy as the pilot.
+The existing Smartsheet app secret can be retrieved automatically from this Mac’s login Keychain using the saved launcher setup. The Microsoft secret and integration token are entered locally and remain in process memory. Restarting signs out both types of sessions. Preserve the existing private SQLite state and config. No credentials are written there. The new additive receipt table binds a random receipt to the Microsoft tenant/object ID, source sheet, operation key and generated job. A separate audit table records identity, action, receipt and outcome, not full request text or tokens. Protect and back up this state under the same private-state policy as the pilot.
 
 The Microsoft Dev Tunnels organization gate remains enabled; it is not used as a trusted identity header. For eventual internal hosting, use the new domain's exact callback, HTTPS, same-origin frontend/API routing and private secret storage. Do not tunnel the older shared-token local editor.
 
@@ -112,6 +112,8 @@ Limits: 20 new attempts per Microsoft principal per sheet per day; up to 10 refe
 5. Verify the generated job and reference on the actual DEV source and in the coordinator workspace, then test the existing offer/accept flow with a real designer.
 6. Verify rejected Guest/wrong-tenant/ineligible identities, independent sign-outs and a second person's real sign-in.
 7. Decide separately what to do with any publicly reachable **native Smartsheet form**. It remains unchanged and may still provide a separate intake path; Microsoft protection applies only to this custom portal route. Do not claim all intake is Microsoft-protected until this is addressed.
+
+Before activating tracking, also complete real two-requester ownership tests, changed-file withholding, staff share/revoke tests, and verify that internal notes remain absent. See the tracking guide for the field projection and new routes.
 
 The implementation does not change native dashboards, reports, forms, formula definitions, workflows or sharing. It does not enable email, AI, SCOUT, Dropbox or production writes.
 

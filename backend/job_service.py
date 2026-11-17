@@ -155,6 +155,12 @@ class JobService:
     def _project_dto(self, context, project):
         output = copy.deepcopy({key: value for key, value in project.items() if key != '_rowId'})
         output['permissions'] = self._permissions(context, project)
+        output['requesterTrackable'] = False
+        if getattr(self.runtime,'intake',None) and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled'):
+            with self.runtime.db() as db:
+                output['requesterTrackable'] = bool(db.execute('SELECT 1 FROM employee_intake_receipts r '
+                    'JOIN employee_request_snapshots s ON s.receipt=r.receipt WHERE r.sheet=? AND r.job=? AND s.row_id=?',
+                    (context.reader.sheet_id,project['id'],project['_rowId'])).fetchone()) and not project.get('readOnly')
         if output.get('requestedDesigner') in context.principal.identities:
             output['requestedDesigner'] = context.principal.email
         return output
@@ -236,6 +242,8 @@ class JobService:
             context = self._fresh(session_id)
             result = {
                 'schemaVersion': '1.0',
+                'requesterTrackingAvailable': bool(getattr(self.runtime,'intake',None)
+                    and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled')),
                 'actor': context.principal.public_identity(),
                 'canCreate': self._writable(context),
                 'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),

@@ -4,7 +4,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 let session, submission, saved, pendingFiles = [], busy = false;
 const key = () => crypto.randomUUID();
 async function api(path, options = {}) {
-  const response = await fetch('/api/intake/' + path, {credentials:'same-origin', ...options,
+  const response = await fetch('/api/intake/' + path, {credentials:'same-origin',cache:'no-store', ...options,
     headers:{...(options.method ? {'X-Portal-CSRF':session.csrf} : {}), ...options.headers}});
   const data = await response.json();
   if (!response.ok) {
@@ -43,7 +43,7 @@ function render() {
   document.querySelector('#employee-request').addEventListener('submit', submit);
 }
 function success() {
-  main.innerHTML = `<section class="success-panel"><div class="eyebrow">Request received</div><h1>Thanks, ${esc(session.name)}.</h1><p>Your request <strong>${esc(saved.jobId)}</strong> has been received.</p><p>${esc(saved.title)}</p><p>Creative Services will review your details and follow up with you.</p>${saved.attachments.length?`<h2>Reference files received</h2><ul>${saved.attachments.map(f=>`<li>${esc(f.name)}</li>`).join('')}</ul>`:''}<div class="page-actions"><a class="button button-primary" href="/request">Submit another request</a></div></section>`;
+  main.innerHTML = `<section class="success-panel"><div class="eyebrow">Request received</div><h1>Thanks, ${esc(session.name)}.</h1><p>Your request <strong>${esc(saved.jobId)}</strong> has been received.</p><p>${esc(saved.title)}</p><p>Creative Services will review your details and follow up with you.</p>${saved.attachments.length?`<h2>Reference files received</h2><ul>${saved.attachments.map(f=>`<li>${esc(f.name)}</li>`).join('')}</ul>`:''}<div class="page-actions"><a class="button button-primary" href="/my-requests#/requests/${encodeURIComponent(saved.receipt)}">View my request</a><a class="button" href="/request">Submit another request</a></div></section>`;
   main.focus();
 }
 async function submit(event) {
@@ -97,5 +97,14 @@ document.querySelector('#sign-out').addEventListener('click',async()=>{
   const response=await fetch('/auth/microsoft/logout',{method:'POST',headers:{'X-Portal-CSRF':session.csrf}});
   if (response.ok) location.assign('/');
 });
-try {session=await api('session'); render();}
-catch(error) {main.textContent=error.message;const link=document.createElement('a');link.href='/auth/microsoft/login';link.textContent=' Sign in with Microsoft';main.append(link);}
+let requesterTutorial;
+async function help(){
+  if(!requesterTutorial){const module=await import('./tutorial.js');requesterTutorial=module.createTutorial({kind:'requester',role:'requester',trackingAvailable:true,request:options=>api('onboarding',{...options,headers:options.method?{'Content-Type':'application/json'}:{},body:options.body===undefined?undefined:JSON.stringify(options.body)})});}
+  return requesterTutorial;
+}
+document.querySelector('#requester-help').addEventListener('click',async()=>{try{await (await help()).open();}catch{main.insertAdjacentHTML('afterbegin','<p role="status">The tutorial is unavailable. Please try again.</p>');}});
+try {
+  session=await api('session');
+  if(location.pathname==='/my-requests'){const module=await import('./requester.js');await module.mountRequester({main,api,session});}else render();
+  try{await (await help()).initialize();}catch{/* Keep request functions available if the tutorial cannot save preferences. */}
+}catch(error){main.textContent=error.message;const link=document.createElement('a');link.href='/auth/microsoft/login';link.textContent=' Sign in with Microsoft';main.append(link);}

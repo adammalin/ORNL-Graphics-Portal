@@ -87,6 +87,12 @@ export const TUTORIALS={
       'Pending offers remain separate from accepted work.',
       'Selected copied projects form a sample, not a complete staffing picture. Calendar availability is not connected.'
     ],'workload'),
+    lesson('reporting','Explore Analytics & Reports','Coordinators can review service activity and prepare management reports.',[
+      'Choose a period and filters, then apply them. Received and verified completion counts include zero-count months.',
+      'Current workload covers all dates within the other filters. Copied projects are a DEV sample, not a complete staffing record.',
+      'Classify editable test jobs with a directorate and impact justification. Intended outcomes and observed results are separate private portal fields.',
+      'Choose Executive overview, Operations review or Impact briefing. Arrange sections and download CSV, PDF, Word or editable PowerPoint. Data coverage stays with the report.'
+    ],'reporting'),
     lesson('planning','Keep plans current','Check dates, estimates and priority as scope becomes clear.',[
       'Use Edit job to record permitted project changes.',
       'Confirm the delivery commitment separately from the customer’s requested date.',

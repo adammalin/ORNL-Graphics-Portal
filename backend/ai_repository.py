@@ -9,7 +9,7 @@ except ImportError:
     from dev_store import WriteError
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MIGRATIONS = (
     (1, (
         """CREATE TABLE ai_intake_contexts (
@@ -73,6 +73,10 @@ MIGRATIONS = (
             event_id TEXT PRIMARY KEY, receipt TEXT NOT NULL, attachment_id TEXT NOT NULL,
             action TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL
         )''',
+    )),
+    (4, (
+        '''CREATE TABLE reporting_profiles (sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(sheet_id,row_id))''',
+        '''CREATE TABLE reporting_snapshots (snapshot_id TEXT PRIMARY KEY,owner TEXT NOT NULL,sheet_id TEXT NOT NULL,expires_at REAL NOT NULL,fingerprint TEXT NOT NULL,payload_json TEXT NOT NULL,created_at REAL NOT NULL)''',
     )),
 )
 

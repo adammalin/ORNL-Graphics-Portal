@@ -100,3 +100,16 @@ class RequesterTrackingTests(unittest.TestCase):
     def test_revoked_integration_and_disabled_feature_fail_closed(self):
         self.p.access['coord']='DENIED';self.assertEqual(self.get().status_code,502)
         self.p.value['microsoftIntake']['enabled']=False;self.assertEqual(self.get().status_code,503)
+
+    def test_recoverable_staff_deletion_blocks_requester_tracking_files_and_uploads(self):
+        self.p.value['invites'][0]['role']='admin';admin,_=self.p.login('coord')
+        csrf=self.p.get(admin,'/api/session').get_json()['csrf']
+        project=next(p for p in self.p.get(admin,'/api/projects').get_json()['projects'] if p['id']==self.job)
+        body={'action':'delete','revision':project['revision'],'version':0,'confirmation':self.job,'reason':'Fictional deletion audit'}
+        response=admin.post('/api/v1/jobs/'+self.job+'/lifecycle',base_url=self.p.origin,json=body,
+            headers={'Origin':self.p.origin,'X-Portal-CSRF':csrf,'Idempotency-Key':'fictional-delete-request-key'})
+        self.assertEqual(response.status_code,200,response.get_json())
+        self.assertFalse(self.get().get_json()['available'])
+        response=self.p.ms_write(self.client,'/api/intake/requests/'+self.token+'/attachments',content=b'fake reference',
+            headers={'Content-Type':'text/plain','X-Filename':'example.txt','X-Project-Revision':project['revision']})
+        self.assertEqual(response.status_code,410)

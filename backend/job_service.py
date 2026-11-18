@@ -10,6 +10,7 @@ import copy
 import hashlib
 import re
 import time
+from datetime import datetime, timezone
 
 try:
     from backend.dev_store import DevStore, WriteError
@@ -45,6 +46,7 @@ class PilotStore(DevStore):
         self.runtime = runtime
         self.identities = frozenset(actor.identities)
         self._write_guard = None
+        self._admin_rows = frozenset()
         super().__init__(reader, path)
 
     def metadata(self):
@@ -74,15 +76,20 @@ class PilotStore(DevStore):
         return super().validate_source(source_current=source_current)
 
     @contextmanager
-    def authorized_writes(self, guard):
+    def authorized_writes(self, guard, admin_rows=()):
         # JobService holds the shared sheet lock for the whole operation.
         if self._write_guard is not None:
             raise WriteError('A save is already in progress.', 409)
         self._write_guard = guard
+        self._admin_rows = frozenset(admin_rows)
         try:
             yield
         finally:
             self._write_guard = None
+            self._admin_rows = frozenset()
+
+    def permits_admin_row(self,row_id):
+        return self._write_guard is not None and row_id in self._admin_rows and row_id in self.runtime.active_config().copied_row_ids
 
     def _write(self, *args, **kwargs):
         if self._write_guard is None:
@@ -110,20 +117,22 @@ class JobService:
 
     def _ensure_current(self, session_id, context):
         current = self._resolve(session_id)
+        if current.reader.copied_row_ids != self.runtime.active_config().copied_row_ids:
+            raise WriteError('The approved project selection changed. Refresh before continuing.',409)
         if current.principal != context.principal or current.reader is not context.reader:
             raise WriteError('Your authorization changed. Refresh before continuing.', 403)
         return current
 
-    def _creator(self, job, principal):
+    def _creator(self, job, principal, row_id):
         with self.runtime.db() as db:
             return bool(db.execute(
-                'SELECT 1 FROM creators WHERE sheet=? AND job=? AND user_id=?',
-                (self.runtime.config.sheet_id, job, principal.user_id)).fetchone())
+                'SELECT 1 FROM job_ownership WHERE sheet_id=? AND row_id=? AND job_id=? AND user_id=?',
+                (self.runtime.config.sheet_id, row_id, job, principal.user_id)).fetchone())
 
     def _can_read(self, principal, project):
-        return (principal.role == 'coordinator'
+        return (principal.can_coordinate
                 or project.get('requestedDesigner') in principal.identities
-                or self._creator(project['id'], principal))
+                or self._creator(project['id'], principal, project['_rowId']))
 
     def _writable(self, context):
         config = self.runtime.active_config()
@@ -131,31 +140,38 @@ class JobService:
                     and context.reader.sheet.get('accessLevel') in WRITABLE_ACCESS)
 
     def _permissions(self, context, project):
-        if project.get('readOnly') or project.get('synthetic') is not True:
-            return {'edit': False, 'respond': False, 'offer': False}
+        lifecycle=self.runtime.lifecycle.state(context.reader.sheet_id,project['_rowId'])
+        manage=self.runtime.lifecycle.can_manage(context,project)
+        recovery={'delete':manage and lifecycle['state']=='active','restore':manage and lifecycle['state']=='deleted'}
+        if lifecycle['state']=='deleted' or ((project.get('readOnly') or project.get('synthetic') is not True) and not context.principal.is_admin):
+            return {'edit': False, 'respond': False, 'offer': False, **recovery}
         principal = context.principal
         writable = self._writable(context)
         own = project.get('requestedDesigner') in principal.identities
         accepted = own and project.get('response') == 'accepted'
-        creator_new = project.get('stage') == 'New' and self._creator(project['id'], principal)
+        creator_new = project.get('stage') == 'New' and self._creator(project['id'], principal, project['_rowId'])
         return {
-            'edit': bool(writable and (principal.role == 'coordinator' or accepted or creator_new)),
+            **recovery,
+            'edit': bool(writable and (principal.can_coordinate or accepted or creator_new)),
             'respond': bool(writable and own and project.get('stage') == 'Assigned'
                             and project.get('response') not in ('accepted', 'declined')),
-            'offer': bool(writable and principal.role == 'coordinator'
+            'offer': bool(writable and principal.can_coordinate
                           and project.get('response') != 'accepted'
                           and project.get('stage') not in ('Completed', 'Archived')),
         }
 
-    def _project(self, context, job_id):
+    def _project(self, context, job_id, include_deleted=False):
         project = next((p for p in context.reader._cache['projects'] if p['id'] == job_id), None)
         if not project or not self._can_read(context.principal, project):
             raise WriteError('This project is not available to your account.', 404)
+        if not include_deleted and self.runtime.lifecycle.is_deleted(context.reader.sheet_id,project['_rowId']):
+            raise WriteError('This job is in the recoverable Deleted area.',410)
         return project
 
     def _project_dto(self, context, project):
         output = copy.deepcopy({key: value for key, value in project.items() if key != '_rowId'})
         output['permissions'] = self._permissions(context, project)
+        output['lifecycleVersion'] = self.runtime.lifecycle.state(context.reader.sheet_id,project['_rowId'])['version']
         output['requesterTrackable'] = False
         if getattr(self.runtime,'intake',None) and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled'):
             with self.runtime.db() as db:
@@ -183,6 +199,8 @@ class JobService:
     def _workspace(self, context, raw):
         principal = context.principal
         config = self.runtime.active_config()
+        raw={**raw,'projects':[p for p in raw['projects'] if not self.runtime.lifecycle.is_deleted(context.reader.sheet_id,p['_rowId'])]}
+        context.reader._portal_policy = self._policy_version(context)
         projects = [self._project_dto(context, p) for p in raw['projects']
                     if self._can_read(principal, p)]
         visible_copied_designers = {p.get('requestedDesigner') for p in projects if p.get('readOnly')}
@@ -227,6 +245,10 @@ class JobService:
             'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),
         }
 
+    def _policy_version(self,context):
+        config=self.runtime.active_config()
+        return (context.principal,tuple(sorted(config.invites.items())),config.writes,config.workflow_review_valid(),self.runtime.lifecycle.epoch())
+
     def workspace(self, session_id):
         with self.runtime.sheet_lock:
             context = self._fresh(session_id)
@@ -253,7 +275,7 @@ class JobService:
             'features': {**{name: False for name in FEATURE_NAMES},
                          **self.runtime.ai.flags()},
             'limits': {'attachmentBytes': MAX_FILE_BYTES},
-            'constraints': {'deletion': False, 'sharedTokenFallback': False},
+            'constraints': {'deletion': False, 'recoverableDeletion': True, 'sharedTokenFallback': False},
             }
 
     def capabilities(self, session_id):
@@ -276,7 +298,8 @@ class JobService:
                 raise GatewayError('Smartsheet returned an invalid workspace version.')
             unchanged = (str(current) == version and current == reader.version
                          and reader.copied_row_ids == config.copied_row_ids
-                         and time.monotonic() - reader._cache_time < 60)
+                         and time.monotonic() - reader._cache_time < 60
+                         and getattr(reader,'_portal_policy',None)==self._policy_version(context))
             if unchanged:
                 result = {'unchanged': True, 'sourceVersion': current}
             else:
@@ -302,7 +325,7 @@ class JobService:
             key = self._key(principal, key)
             if job_id:
                 project = self._project(context, job_id)
-                if project.get('readOnly'):
+                if project.get('readOnly') and not principal.is_admin:
                     raise WriteError('Copied DEV projects are read-only. Use a test record to make changes.', 403)
                 permissions = self._permissions(context, project)
                 with reader.store.db() as db:
@@ -328,13 +351,19 @@ class JobService:
                 # Do not use an authorization snapshot after queued work expires.
                 action = body.get('action') if isinstance(body, dict) else None
                 with reader.store.authorized_writes(
-                        lambda: self._before_write(session_id, context, job_id, action)):
+                        lambda: self._before_write(session_id, context, job_id, action),
+                        admin_rows={project['_rowId']} if job_id and principal.is_admin else ()):
                     result = reader.store.perform(key, body, job_id, source_current=True)
                 saved_job = result['jobId']
                 if job_id is None:
+                    saved=next((p for p in result['projects'] if p['id']==saved_job),None)
+                    if not saved or not result.get('createdRowId') or result['createdRowId']!=saved['_rowId']:
+                        raise WriteError('The original creation row cannot be verified. Ask an admin to reconcile this request.',409)
                     with self.runtime.db() as db:
                         db.execute('INSERT OR IGNORE INTO creators VALUES (?,?,?)',
                                    (reader.sheet_id, saved_job, principal.user_id))
+                        db.execute('INSERT OR IGNORE INTO job_ownership VALUES (?,?,?,?,?)',
+                            (reader.sheet_id,saved['_rowId'],saved_job,principal.user_id,datetime.now(timezone.utc).isoformat()))
                 self.runtime.audit(principal, body.get('action', 'create'), saved_job, 'success')
                 context = self._resolve(session_id)
                 return {**self._workspace(context, result), 'jobId': saved_job}
@@ -351,7 +380,8 @@ class JobService:
                 raise WriteError('Your account cannot add references to this project.', 403)
             key = self._key(context.principal, key)
             with context.reader.store.authorized_writes(
-                    lambda: self._before_write(session_id, context, job_id, 'upload')):
+                    lambda: self._before_write(session_id, context, job_id, 'upload'),
+                    admin_rows={project['_rowId']} if context.principal.is_admin else ()):
                 result = context.reader.store.upload(key, job_id, expected, name, mime, content)
             self.runtime.audit(context.principal, 'upload', job_id, 'success')
             return self._workspace(self._resolve(session_id), result)
@@ -361,6 +391,7 @@ class JobService:
             context = self._fresh(session_id)
             self._project(context, job_id)
             result = context.reader.attachment(job_id, attachment_id)
-            # Do not return file contents after source/session authority has ended.
+            # Recheck private deletion as well as source/session authority after download.
+            self._project(context,job_id)
             self._ensure_current(session_id, context)
             return result

@@ -49,7 +49,7 @@ class RequestTracking:
             return None  # Earlier receipts need verified binding; never guess by email/title.
         project = next((p for p in self.intake.reader._cache['projects']
                         if p['id']==record[0] and p['_rowId']==record[3]),None)
-        if (not project or project.get('synthetic') is not True or project.get('readOnly')
+        if (not project or self.runtime.lifecycle.is_deleted(self.intake.reader.sheet_id,record[3]) or project.get('synthetic') is not True or project.get('readOnly')
                 or record[3] in self.runtime.active_config().copied_row_ids):
             return None
         return project
@@ -131,6 +131,7 @@ class RequestTracking:
             with self.runtime.db() as db:
                 current = db.execute('SELECT content_sha256 FROM employee_request_resources WHERE receipt=? '
                     'AND attachment_id=? AND visible=1',(receipt,attachment_id)).fetchone()
+            if not self._project(record):raise WriteError('This request is no longer available.',404)
             if current!=grant:
                 raise WriteError('File access changed. Refresh your request.',403)
             return content,mime,name

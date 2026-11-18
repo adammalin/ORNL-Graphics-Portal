@@ -43,7 +43,7 @@ class CopiedProjectTests(unittest.TestCase):
         self.assertTrue(copied['readOnly']); self.assertFalse(copied['synthetic'])
         self.assertEqual(copied['stage'], 'Accepted')
         self.assertEqual(copied['sourceStatus'], 'Designer Accepted')
-        self.assertEqual(copied['permissions'], {'edit':False,'respond':False,'offer':False})
+        self.assertEqual(copied['permissions'], {'edit':False,'respond':False,'offer':False,'delete':False,'restore':False})
         for action in ('edit','stage','offer','accept','decline'):
             result = self.p.write(client, '/api/projects/COPIED', {'action':action,'revision':copied['revision'],'fields':{'title':'Do not save'},'stage':'Archived','designer':'designer@example.org'})
             self.assertEqual(result.status_code, 403, result.get_json())

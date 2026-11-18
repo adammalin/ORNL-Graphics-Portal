@@ -80,3 +80,7 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 ### Coordinator analytics and reports
 
 The private pilot now includes `/#/reports`: coordinator-only service activity, workload, directorate/impact classification, report presets and CSV/PDF/Word/editable PowerPoint downloads. See [the reporting guide](docs/analytics-and-reports.md) for metric definitions, coverage, private brand-asset provisioning and migration/rollback details. The native Smartsheet workflows remain unchanged.
+
+### User and agent authorization audit
+
+See [the audit and permission matrix](docs/agent-authorization-audit.md). The private pilot now supports explicit admin roles and recoverable portal delete/restore. Standard staff deletion requires permanent-row creator proof; assignment alone grants no deletion rights. Separate MCP/delegated agent access remains disabled. Native Smartsheet rows, files and workflows are retained by portal deletion.

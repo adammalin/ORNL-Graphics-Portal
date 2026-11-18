@@ -10,7 +10,7 @@ const references=lesson('references','Use reference files and links','Keep examp
   'Use the reference count on a card or the Reference files & links section on the details page.',
   'Preview supported files or download a reference to inspect it. A filename alone is not the file’s contents.',
   'On an editable job, Add reference files adds a new attachment. Existing files are retained.',
-  'Copied projects show references read-only. A requester sees only their submitted files and files explicitly shared with them.'
+  'Copied projects show references read-only for non-admins. A requester sees only their submitted files and files explicitly shared with them.'
 ],'references');
 const ai=lesson('ai','Review an AI brief','An AI draft is a proposal for you to review, not a replacement for the original request.',[
   'On an eligible job, prepare its AI context and select the references your agent should read.',
@@ -18,10 +18,16 @@ const ai=lesson('ai','Review an AI brief','An AI draft is a proposal for you to 
   'Import the analysis and review evidence, missing information, conflicts and reference coverage.',
   'Accepting a brief records a portal review. It does not apply suggested job fields or send questions to the customer. Changed sources require a fresh context.'
 ],'ai');
+const recovery=lesson('recovery','Delete and restore a job','Deletion in this portal is recoverable and preserves the native source.',[
+  'Move to Deleted hides a job from portal boards, files, AI routes and reports; its Smartsheet row and attachments remain intact.',
+  'Admins may delete and restore any selected portal job, including copied DEV jobs. Other staff may delete or restore only jobs they created with a verified permanent-row ownership binding.',
+  'An accepted assignment permits project editing; it does not make the assignee the creator or permit deletion of someone else’s job.',
+  'Type the job number in the confirmation form. Restore brings the job back in its original stage. Browser agents have the signed-in user’s permissions; tutorial role choices grant no authority.'
+],'recovery');
 const find=lesson('find','Find work again','Use the views and filters to find the record you need.',[
   'Search by job number, title, requester or task type. Use designer and stage filters to narrow the board.',
   'Switch between Board and List. View job opens the details for that individual record.',
-  'The project source filter separates copied read-only projects from editable test records.',
+  'The project source filter separates copied DEV projects from test records; permissions decide available actions.',
   'Completed & archived retains closed work and its references; completed work is excluded from active workload totals.'
 ],'find');
 const finish=lesson('finish','You are ready','The walkthrough is complete. Your practice has not changed any live project.',[
@@ -61,8 +67,8 @@ export const TUTORIALS={
       'Share with requester makes that selected file version available in their own My Requests page.',
       'Internal references remain private until shared. Stop sharing withdraws that file’s tracking access without deleting it.',
       'A changed file must be shared again. This control does not change native Smartsheet sharing or send an email.'
-    ],'sharing'),find,finish]},
-  coordinator:{label:'Coordinator',description:'Learn intake review, routing, acceptance, workload and oversight.',lessons:[
+    ],'sharing'),recovery,find,finish]},
+  coordinator:{label:'Coordinator / admin',description:'Learn intake review, routing, acceptance, workload and oversight.',lessons:[
     lesson('intake','Review incoming requests','New requests arrive in the New lane for review.',[
       'Open the request and read the customer’s purpose, intended audience, deliverables and requested date.',
       'Read additional notes and reference files before deciding that information is missing.',
@@ -72,7 +78,7 @@ export const TUTORIALS={
     lesson('routing','Offer the right designer','Offer work to an invited designer after reviewing the request.',[
       'Use Offer to a designer on an eligible unaccepted project.',
       'Save designer offer records the request; it does not mean the designer has accepted.',
-      'Historical names can appear on copied projects without becoming eligible offer recipients.',
+      'Historical names can appear on copied projects without becoming eligible offer recipients. Admins can edit selected copied jobs; other staff retain read-only access.',
       'Category routing and calendar-based availability are separate automation work, not decisions this screen makes automatically.'
     ],'routing'),
     lesson('responses','Follow the designer response','Acceptance belongs to the designer receiving the offer.',[
@@ -104,7 +110,7 @@ export const TUTORIALS={
       'Internal notes, AI drafts, charge fields and other customers’ jobs stay out of that view.',
       'Use Requester access on an eligible file to explicitly share its current version or stop sharing it.',
       'Only requests with verified submission ownership are eligible. Copied jobs do not become customer-accessible automatically.'
-    ],'sharing'),find,finish]},
+    ],'sharing'),recovery,find,finish]},
   requester:{label:'Requester',description:'Learn how to submit a clear request and follow your own work.',lessons:[
     lesson('request','Send a clear request','Sign in with your organization Microsoft account to request creative work.',[
       'Your name and email come from your verified sign-in. No Smartsheet account is needed for this requester area.',
@@ -145,5 +151,7 @@ export function practiceAction(job,action,value){
   else if(action==='share'){p.shared=!p.shared;p.message=p.shared?'Example file is visible to the practice requester.':'Example file withdrawn from the practice requester; nothing was deleted.';}
   else if(action==='view'){p.view=value;}
   else if(action==='track'){p.stage=value;}
+  else if(action==='practice-delete'){p.deleted=true;p.message='Practice job moved to Deleted; its record and files were retained.';}
+  else if(action==='practice-restore'){p.deleted=false;p.message='Practice job restored in its original stage.';}
   return p;
 }

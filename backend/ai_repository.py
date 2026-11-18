@@ -9,7 +9,7 @@ except ImportError:
     from dev_store import WriteError
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MIGRATIONS = (
     (1, (
         """CREATE TABLE ai_intake_contexts (
@@ -77,6 +77,12 @@ MIGRATIONS = (
     (4, (
         '''CREATE TABLE reporting_profiles (sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(sheet_id,row_id))''',
         '''CREATE TABLE reporting_snapshots (snapshot_id TEXT PRIMARY KEY,owner TEXT NOT NULL,sheet_id TEXT NOT NULL,expires_at REAL NOT NULL,fingerprint TEXT NOT NULL,payload_json TEXT NOT NULL,created_at REAL NOT NULL)''',
+    )),
+    (5, (
+        'CREATE TABLE job_lifecycle (sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ("active","deleted")),version INTEGER NOT NULL,updated_by TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(sheet_id,row_id))',
+        'CREATE TABLE job_lifecycle_events (event_id TEXT PRIMARY KEY,sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,action TEXT NOT NULL,actor TEXT NOT NULL,at TEXT NOT NULL,source_revision TEXT NOT NULL,reason TEXT NOT NULL,client_id TEXT NOT NULL,execution_origin TEXT NOT NULL)',
+        'CREATE TABLE job_lifecycle_operations (sheet_id TEXT NOT NULL,user_id TEXT NOT NULL,operation_key TEXT NOT NULL,payload_hash TEXT NOT NULL,result_json TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(sheet_id,user_id,operation_key))',
+        'CREATE TABLE job_ownership (sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(sheet_id,row_id))',
     )),
 )
 

@@ -1,5 +1,6 @@
 # Invited Smartsheet OAuth pilot
 
+> Policy update: see [the current user/agent authorization audit](agent-authorization-audit.md) for explicit admin access to selected copied DEV jobs and recoverable portal deletion. Earlier no-delete/read-only-copy results below describe their original qualification scope.
 This service is separate from the local shared-token editor and the public fictional Pages demo. It uses one OAuth token per signed-in person; there is no shared-owner-token fallback. Never tunnel port 4174 or the original `backend/server.py` editor.
 
 ## Setup

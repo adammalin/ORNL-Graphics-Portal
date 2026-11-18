@@ -15,7 +15,7 @@
       "properties": {
         "id": { "type": "string", "format": "email" },
         "name": { "type": "string", "minLength": 1 },
-        "role": { "enum": ["designer", "coordinator"] }
+        "role": { "enum": ["designer", "coordinator", "admin"] }
       }
     },
     "canCreate": { "type": "boolean" },
@@ -48,7 +48,8 @@
       "additionalProperties": false,
       "required": ["deletion", "sharedTokenFallback"],
       "properties": {
-        "deletion": { "const": false },
+        "deletion": { "const": false, "description":"Permanent native deletion is disabled." },
+        "recoverableDeletion": { "const": true },
         "sharedTokenFallback": { "const": false }
       }
     }

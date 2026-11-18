@@ -47,7 +47,7 @@ def csv_value(value):
 def filter_text(report):
     labels={'source':'Source','designer':'Designer','taskType':'Work type','directorate':'Directorate','impactLevel':'Impact level','stage':'Current stage'}
     names={d['id']:d['name'] for d in report['options']['designers']}
-    return ' | '.join(label+': '+plain(names.get(report['filters'][key],report['filters'][key]) if key=='designer' else {'all':'All approved DEV records','copied':'Copied projects (read-only)','test':'Test jobs'}.get(report['filters'][key],report['filters'][key]) if key=='source' else report['filters'][key]) for key,label in labels.items() if report['filters'].get(key)) or 'All approved records'
+    return ' | '.join(label+': '+plain(names.get(report['filters'][key],report['filters'][key]) if key=='designer' else {'all':'All approved DEV records','copied':'Copied DEV projects','test':'Test jobs'}.get(report['filters'][key],report['filters'][key]) if key=='source' else report['filters'][key]) for key,label in labels.items() if report['filters'].get(key)) or 'All approved records'
 
 
 def section_table(report,key):
@@ -68,7 +68,7 @@ def csv_export(report,sections,jobs=False):
             'Impact category','Impact justification','Impact statement','Intended outcome','Observed outcome','Evidence URL','Reporting disposition','Job URL','Report generated','Source version','Period start','Period end','Applied filters','Report scope','Data coverage JSON','Definitions']
         writer.writerow(columns)
         for r in report['records']:
-            m=r['reporting'];values=[r['id'],r['title'],r['stage'],' | '.join(r['taskTypes']),r['designer'],r['department'],r['createdDate'],r['completedDate'],r['confirmedDueDate'],r['estimatedHours'],r['countedCompleted'],'Copied read-only' if r['copied'] else 'DEV test',*[m.get(k,'') for k in ['directorate','division','impactLevel','impactCategory','impactJustification','impactStatement','intendedOutcome','observedOutcome','evidenceUrl','disposition']],r['url'],report['generatedAt'],report['sourceVersion'],report['filters']['start'],report['filters']['end'],filter_text(report),report['scope'],json.dumps(report['quality'],sort_keys=True),' | '.join(report['notes'])]
+            m=r['reporting'];values=[r['id'],r['title'],r['stage'],' | '.join(r['taskTypes']),r['designer'],r['department'],r['createdDate'],r['completedDate'],r['confirmedDueDate'],r['estimatedHours'],r['countedCompleted'],'Copied DEV source' if r['copied'] else 'DEV test',*[m.get(k,'') for k in ['directorate','division','impactLevel','impactCategory','impactJustification','impactStatement','intendedOutcome','observedOutcome','evidenceUrl','disposition']],r['url'],report['generatedAt'],report['sourceVersion'],report['filters']['start'],report['filters']['end'],filter_text(report),report['scope'],json.dumps(report['quality'],sort_keys=True),' | '.join(report['notes'])]
             writer.writerow([csv_value(v) for v in values])
     else:
         writer.writerow(['Section','Record','Metric','Value'])

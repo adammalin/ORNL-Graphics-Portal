@@ -331,6 +331,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     app.extensions['employee_intake'] = intake
     runtime.intake = intake
     tutorial = Onboarding(runtime)
+    from backend.reporting import Reporting
+    reporting = Reporting(runtime)
+    app.extensions['reporting'] = reporting
 
     def requester_service():
         if intake is None:
@@ -535,6 +538,21 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         # CSRF belongs only to the browser adapter, never the shared job service.
         return jsonify({**data, 'csrf': signed_in().csrf})
 
+    @app.post('/api/reports')
+    def create_report():
+        return jsonify(reporting.snapshot(request.cookies.get(SESSION_COOKIE),request_json(8192)))
+
+    @app.patch('/api/reports/jobs/<job>')
+    def reporting_profile(job):
+        return jsonify(reporting.profile(request.cookies.get(SESSION_COOKIE),job,request_json(16384)))
+
+    @app.post('/api/reports/<snapshot_id>/export')
+    def export_report(snapshot_id):
+        content,mime,name=reporting.export(request.cookies.get(SESSION_COOKIE),snapshot_id,request_json(4096))
+        response=Response(content,content_type=mime)
+        response.headers['Content-Disposition']="attachment; filename*=UTF-8''"+quote(name,safe='')
+        return response
+
     @app.get('/api/v1/capabilities')
     def capabilities():
         return jsonify(runtime.jobs.capabilities(request.cookies.get(SESSION_COOKIE)))
@@ -632,7 +650,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','tutorial.js','tutorial-content.js','requester.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

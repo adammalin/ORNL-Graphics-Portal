@@ -4,3 +4,9 @@ waitress==3.0.2
 msal==1.39.0
 jsonschema==4.26.0
 pypdf==6.21.4
+
+# Management reports
+reportlab==4.4.9
+python-docx==1.2.0
+python-pptx==1.0.2
+matplotlib==3.10.8

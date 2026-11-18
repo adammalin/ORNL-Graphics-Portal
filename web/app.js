@@ -174,6 +174,7 @@ function notFound() { return `<div class="empty-state"><h1>Project not found</h1
 function updateChrome(path) {
   let nav=path==='/'?'home':path.split('/')[1]; if(path.startsWith('/projects/'))nav='projects';
   document.querySelectorAll('[data-nav]').forEach(a=>{const active=a.dataset.nav===nav;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  document.querySelector('#reports-nav').hidden=!authenticated||state.actor?.role!=='coordinator';
   document.querySelector('#my-count').textContent=myProjects(state.projects,state.person).length || '';
   const banner=document.querySelector('#mode-banner');banner.classList.toggle('live',readonly());
   banner.textContent=authenticated&&state.actor?`Private DEV pilot · ${state.actor.name} · ${live()?'Saves to Smartsheet':'Read-only access'}`:state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
@@ -192,6 +193,13 @@ function render({focus=false}={}) {
   else if(['/my-work','/projects','/archive'].includes(path))main.innerHTML=renderCollection(path.slice(1));
   else if(path==='/new')main.innerHTML=renderNew();
   else if(path==='/workload')main.innerHTML=renderWorkload();
+  else if(path==='/reports'){
+    if(!authenticated||state.actor?.role!=='coordinator')main.innerHTML='<h1>Analytics & Reports</h1><p>This area is available to signed-in coordinators.</p>';
+    else if(!main.querySelector('#reports-root')){
+      main.innerHTML='<div id="reports-root"><h1>Analytics & Reports</h1><p>Preparing your DEV reporting workspace…</p></div>';
+      const root=main.querySelector('#reports-root');import('./reports.js').then(module=>{if(root.isConnected)module.mountReports({root,api,csrf:state.csrf});}).catch(()=>{root.textContent='Reporting could not be loaded. Refresh this page.';});
+    }
+  }
   else if(path.startsWith('/submitted/'))main.innerHTML=renderSuccess(path.split('/')[2]);
   else if(path.startsWith('/projects/'))main.innerHTML=renderDetail(path.split('/')[2],path.endsWith('/references'));
   else main.innerHTML=notFound();
@@ -374,7 +382,7 @@ function setSyncStatus(kind,error){
   syncElement.textContent=kind==='saving'?'Saving to Smartsheet…':kind==='checking'?'Checking for updates…':kind==='paused'?'Sync paused while editing':kind==='error'?'Sync needs attention':'Synced '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}).format(lastSyncAt=new Date());
   syncElement.title=kind==='error'?(error?.message||'Refresh to retry.'):'Updates are checked while this tab is active.';
 }
-function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&route()!=='/new'&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
+function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&!['/new','/reports'].includes(route())&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
 for(const eventName of ['input','change'])main.addEventListener(eventName,event=>{
   const input=event.target;
   if(input.closest('form,#ai-panel')||input.matches('#job-stage,#offer-designer'))input.dataset.syncDirty='true';

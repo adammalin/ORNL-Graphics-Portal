@@ -76,3 +76,7 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 [Searchable intake, prominent offers and workspace sync](docs/intake-and-workspace-sync.md) adds filtered work-type/department choices, direct offer review and active-tab updates with fewer native reads and protection for unsaved input.
 
 [QA and security review — November 18](docs/qa-security-2026-11-18.md) records the tested boundaries, corrected findings, dependency/static scan results and remaining qualification.
+
+### Coordinator analytics and reports
+
+The private pilot now includes `/#/reports`: coordinator-only service activity, workload, directorate/impact classification, report presets and CSV/PDF/Word/editable PowerPoint downloads. See [the reporting guide](docs/analytics-and-reports.md) for metric definitions, coverage, private brand-asset provisioning and migration/rollback details. The native Smartsheet workflows remain unchanged.

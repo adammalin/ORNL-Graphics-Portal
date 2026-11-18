@@ -55,7 +55,7 @@ def section_table(report,key):
     if key=='monthly':return ['Month','Received','Completed'],[[r['label'],r['received'],r['completed']] for r in report['monthly']]
     if key in ('types','stages','directorates'):return ['Category','Jobs'],[[r['label'],r['value']] for r in report[key]]
     if key=='designers':return ['Designer','Completed in period','Current active','Pending offers','Estimated hours'],[[r['label'],r['value'],r['active'],r['offers'],r['estimatedHours']] for r in report[key]]
-    if key=='quality':return ['Coverage measure','Value'],[[label,shown(report['quality'][k])] for k,label in QUALITY_LABELS.items()]
+    if key=='quality':return ['Coverage measure','Value'],[[label,shown(report['quality'].get(k))] for k,label in QUALITY_LABELS.items()]
     if key=='records':return ['Job','Title','Current stage','Directorate'],[[r['id'],r['title'],r['stage'],r['reporting'].get('directorate') or 'Unclassified'] for r in report['records']]
     return ['Project','Impact level','Impact statement'],[[r['id']+' '+r['title'],r['reporting']['impactLevel'],r['reporting'].get('impactStatement') or 'No statement recorded'] for r in report['highlights']]
 

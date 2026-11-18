@@ -1,3 +1,4 @@
+import {readPortalJson} from './http-client.js';
 import {searchSelect,mountSearchSelects,showChoiceError} from './search-select.js';
 /* Authenticated employee form. This module never calls Smartsheet directly. */
 const main = document.querySelector('#main');
@@ -7,12 +8,7 @@ const key = () => crypto.randomUUID();
 async function api(path, options = {}) {
   const response = await fetch('/api/intake/' + path, {credentials:'same-origin',cache:'no-store', ...options,
     headers:{...(options.method ? {'X-Portal-CSRF':session.csrf} : {}), ...options.headers}});
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error(data.error || 'The request could not be confirmed.');
-    error.status = response.status; throw error;
-  }
-  return data;
+  return readPortalJson(response);
 }
 function field(name, label, {type='text', required=false, full=false, rows=false, value='', readonly=false}={}) {
   return `<div class="field ${full?'full':''}"><label for="${name}">${label}${required?' *':''}</label>${rows

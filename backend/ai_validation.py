@@ -14,9 +14,9 @@ MAX_DRAFT_BYTES = 256 * 1024
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / 'docs/contracts/intake-analysis.schema.json'
 
 
-def strict_json(raw, limit=MAX_DRAFT_BYTES):
+def strict_json(raw, limit=MAX_DRAFT_BYTES, label='AI JSON'):
     if not isinstance(raw, bytes) or len(raw) > limit:
-        raise WriteError('AI JSON exceeds the permitted size.', 413)
+        raise WriteError(label + ' exceeds the permitted size.', 413)
     def pairs(items):
         result = {}
         for key, value in items:
@@ -32,9 +32,19 @@ def strict_json(raw, limit=MAX_DRAFT_BYTES):
             raise ValueError('non-finite number')
         return result
     try:
-        return json.loads(raw.decode('utf-8'), object_pairs_hook=pairs, parse_constant=constant, parse_float=number)
+        result = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs, parse_constant=constant, parse_float=number)
+        pending = [(result, 0)]
+        while pending:
+            value, depth = pending.pop()
+            if depth > 64:
+                raise ValueError('excessive nesting')
+            if isinstance(value, dict):
+                pending.extend((child, depth + 1) for child in value.values())
+            elif isinstance(value, list):
+                pending.extend((child, depth + 1) for child in value)
+        return result
     except (ValueError, UnicodeError, RecursionError):
-        raise WriteError('Use valid JSON without duplicate keys or non-finite values.') from None
+        raise WriteError('Use valid JSON without duplicate keys, non-finite values or excessive nesting.') from None
 
 
 def explicit_date(value, quotes):

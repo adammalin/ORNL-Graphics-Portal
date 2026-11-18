@@ -46,7 +46,7 @@ The implementation MUST:
 - Keep the public GitHub Pages artifact fictional and credential-free. Private job contexts, AI drafts and attachments never enter the public web bundle, repository, CI logs or model fixtures.
 - Enforce approved sheet identity and DEV eligibility on every read and write. A visual filter is not a processing boundary. Native AI experiments must use an isolated synthetic-only source or another separately verified processing boundary.
 - Preserve original customer text and populated human fields. Treat model output as an untrusted proposal.
-- Expose no record/file deletion, replacement, arbitrary HTTP proxy, arbitrary Smartsheet endpoint, schema administration or sharing tool.
+- Expose no permanent native record/file deletion, replacement, arbitrary HTTP proxy, arbitrary Smartsheet endpoint, schema administration or sharing tool. Recoverable portal delete/restore follows the separately approved admin/creator policy and must have its own explicit future agent scope.
 - Preserve the native Assigned Designer formula. Accept/decline must remain attributable to the offered designer; a coordinator or summarization worker cannot impersonate acceptance.
 - Keep email, calendar, SCOUT and Dropbox disconnected in this release. Future mail remains no-delete/archive-only; future Dropbox remains create-only without overwrite, move, rename or deletion. Sending messages needs its own authorized workflow.
 - Preserve the current pause/expiry controls. Saving a draft or applying a change MUST NOT silently renew a workflow review, extend a session, grant a role or enable an automation.
@@ -111,6 +111,8 @@ Suggested modules, to be created during implementation:
 Retain existing routes during the refactor. Preserve current tests and add cross-adapter tests demonstrating identical authorization and field validation.
 
 ### 5.2 Principals and effective authority
+
+**November 18 policy update:** The [user/agent authorization audit](agent-authorization-audit.md) defines the current admin, coordinator, designer and requester matrix, permanent-row ownership and recoverable portal deletion. All six named pilot users were approved as admins. A browser agent inherits that user's browser authority; a future delegation must be narrower by default and must not infer edit, bulk-export or recoverable-delete scopes from admin role alone. General native Smartsheet MCP tokens and backend-host filesystem access are separate trust boundaries.
 
 A verified principal contains the immutable user ID, verified identities, current portal role, connection/client ID, grant ID/scopes, execution origin, expiry and revocation state. The agent cannot choose these in a payload.
 

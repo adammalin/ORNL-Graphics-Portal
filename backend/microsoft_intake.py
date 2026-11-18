@@ -273,6 +273,9 @@ class IntakeService:
         with self.runtime.sheet_lock:
             job = self.owned(actor, receipt)
             self.reader.projects(force=True)
+            project=self.tracking._project(self.tracking._record(actor,receipt))
+            if not project or self.runtime.lifecycle.is_deleted(self.reader.sheet_id,project['_rowId']):
+                raise WriteError('This request is not available for reference uploads.',410)
             row = self.reader.store.row(job)
             project = next((p for p in self.reader._cache['projects'] if p['id'] == job), None)
             if not project:
@@ -321,6 +324,8 @@ class IntakeService:
                     result = self.reader.store.perform(hashed, body)
                 with self.runtime.db() as db:
                     project = next(p for p in result['projects'] if p['id'] == result['jobId'])
+                    if not result.get('createdRowId') or project['_rowId']!=result['createdRowId']:
+                        raise WriteError('The original submission row cannot be verified. Contact Creative Services.',409)
                     db.execute('UPDATE employee_intake_receipts SET job=?,title=COALESCE(title,?) WHERE receipt=? AND owner=?',
                                (result['jobId'], project['title'], receipt, actor.key))
                     db.execute('INSERT OR IGNORE INTO employee_request_snapshots VALUES (?,?,?)',
@@ -338,6 +343,9 @@ class IntakeService:
             self.guard(sid, actor)
             job = self.owned(actor, receipt)
             self.reader.projects(force=True)
+            project=self.tracking._project(self.tracking._record(actor,receipt))
+            if not project or self.runtime.lifecycle.is_deleted(self.reader.sheet_id,project['_rowId']):
+                raise WriteError('This request is not available for reference uploads.',410)
             row = self.reader.store.row(job)
             project = next((p for p in self.reader._cache['projects'] if p['id'] == job), {})
             # Uploads are available for one day, while the request is still New.

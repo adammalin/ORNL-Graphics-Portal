@@ -1,5 +1,6 @@
 # Read-only copied projects in the DEV portal
 
+> Policy update: see [the current user/agent authorization audit](agent-authorization-audit.md) for explicit admin access to selected copied DEV jobs and recoverable portal deletion. Earlier no-delete/read-only-copy results below describe their original qualification scope.
 Selected older projects from the existing DEV sheet can be shown alongside synthetic editable records. This does not connect to production or change any native sheet/report/dashboard/filter/workflow definition.
 
 ## Private selection

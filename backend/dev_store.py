@@ -111,12 +111,15 @@ class DevStore:
             from intake_choices import department_options
         return {'departmentOptions': department_options(self.reader.sheet), 'designers': list(designers.values()), 'taskTypes': columns.get('Task Type', {}).get('options', []), 'taskTypeMultiple': columns.get('Task Type', {}).get('type') == 'MULTI_PICKLIST', 'priorities': columns.get('Priority', {}).get('options', [])}
 
+    def permits_admin_row(self,row_id):
+        return False
+
     def row(self, job_id, expected=None):
         columns = {c['id']: c['title'] for c in self.reader.sheet['columns']}
         matches = []
         for row in self.reader.sheet['rows']:
             cells = {columns.get(c['columnId']): c for c in row.get('cells', [])}
-            if str(row['id']) in self.reader.row_ids and str(row['id']) not in self.reader.copied_row_ids and cells.get('DEV Test Record', {}).get('value') is True and cells.get('Graphics Req #', {}).get('value') == job_id:
+            if ((str(row['id']) in self.reader.row_ids and str(row['id']) not in self.reader.copied_row_ids and cells.get('DEV Test Record', {}).get('value') is True) or self.permits_admin_row(str(row['id']))) and cells.get('Graphics Req #', {}).get('value') == job_id:
                 matches.append(row)
         if len(matches) != 1:
             raise WriteError('This job is outside the approved synthetic DEV rows.', 404)
@@ -211,7 +214,10 @@ class DevStore:
                 prior = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?', (self.reader.sheet_id, key)).fetchone()
             if prior:
                 done = self.begin(key, fingerprint)
-                return self.result(done['jobId'])
+                result=self.result(done['jobId'])
+                if done.get('createdRowId') and not any(p['id']==done['jobId'] and p['_rowId']==done['createdRowId'] for p in result['projects']):
+                    raise WriteError('The original created row is no longer available. Ask an admin to reconcile this request.',409)
+                return {**result,'createdRowId':done.get('createdRowId')}
             columns = self.validate_source(source_current=True) if source_current else self.validate_source()
             if job_id is None:
                 if set(body) != {'fields'}:
@@ -253,9 +259,9 @@ class DevStore:
                 if not projected:
                     raise WriteError('The request may be saved, but its generated job number is not ready. Refresh before submitting again.', 502)
                 job_id = projected['id']
-                self.finish(key, {'jobId': job_id}, row_id)
+                self.finish(key, {'jobId': job_id,'createdRowId':row_id}, row_id)
                 # This was just read back by permanent row ID; do not load it twice.
-                return {**self.reader._cache, 'jobId': job_id}
+                return {**self.reader._cache, 'jobId': job_id,'createdRowId':row_id}
             else:
                 if set(body) - {'action', 'revision', 'fields', 'stage', 'designer'}:
                     raise WriteError('Unknown save parameter.')

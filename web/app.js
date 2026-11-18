@@ -43,8 +43,9 @@ const initials = name => name.split(/\s+/).map(n => n[0]).slice(0,2).join('').to
 const avatar = id => `<span class="avatar ${e(id)}" aria-hidden="true">${e(person(id)?.initials || initials(personName(id)))}</span>`;
 const route = () => { try { return decodeURIComponent(location.hash.slice(1) || '/').split('?')[0]; } catch { return '/not-found'; } };
 const findProject = id => state.projects.find(p => p.id === id);
-const isCoordinator = () => authenticated ? state.actor?.role === 'coordinator' : state.person === 'coordinator';
-const canEdit = p => !p.readOnly && !readonly() && (authenticated ? p.permissions?.edit === true : isCoordinator() || assignedDesigner(p) === state.person);
+const isCoordinator = () => authenticated ? ['coordinator','admin'].includes(state.actor?.role) : state.person === 'coordinator';
+const canEdit = p => !readonly() && (authenticated ? p.permissions?.edit === true : !p.readOnly&&(isCoordinator() || assignedDesigner(p) === state.person));
+const canDelete = p => authenticated && p.permissions?.delete===true;
 const workloadRows = () => authenticated && state.teamWorkload ? state.teamWorkload : workload(state.projects,state.designers);
 const uniqueAttachments = p => (p.attachments || []).filter(f => f && f.name);
 function toast(message, error = false) { const el=document.querySelector('#toast'); el.textContent=message; el.classList.toggle('error',error); el.hidden=false; clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.hidden=true,6500); }
@@ -56,8 +57,8 @@ function modal(title, body, footer='') {
 function heading(title, subtitle, eyebrow='Graphics workspace', actions='') { return `<div class="page-heading"><div><div class="eyebrow">${e(eyebrow)}</div><h1>${e(title)}</h1><p>${e(subtitle)}</p></div>${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`; }
 function breadcrumbs(items) { return `<div class="breadcrumbs"><a href="#/">Overview</a>${items.map(([label,url])=>`<span>/</span>${url?`<a href="${url}">${e(label)}</a>`:e(label)}`).join('')}</div>`; }
 function stats(projects) { const m=metrics(projects); return `<div class="stats">${[[m.active,'Active projects','Completed work excluded','projects'],[m.dueSoon,'Due in 7 days',m.overdue ? `${m.overdue} overdue` : 'No overdue projects','calendar'],[m.newRequests,'New requests','Awaiting team review','brief'],[`${m.hours}h`,'Estimated effort','Across active projects','clock']].map(([n,label,note,i])=>`<div class="stat"><div class="stat-top"><span class="stat-label">${label}</span>${icon(i)}</div><strong>${n}</strong><small>${note}</small></div>`).join('')}</div>`; }
-const copiedLabel = p => p.readOnly ? '<span class="source-badge">Copied project · Read-only</span>' : '';
-const copiedNotice = () => state.projects.some(p=>p.readOnly) ? '<div class="notice"><strong>Selected projects from the DEV copy.</strong> Copied projects are read-only. Test records remain available for editing. Workload totals reflect this selected sample.</div>' : '';
+const copiedLabel = p => p.readOnly ? '<span class="source-badge">'+(state.actor?.role==='admin'?'Copied DEV project · Admin access':'Copied project · Read-only')+'</span>' : '';
+const copiedNotice = () => state.projects.some(p=>p.readOnly) ? '<div class="notice"><strong>Selected projects from the DEV copy.</strong> Copied projects are read-only for non-admins. Admins can edit any selected DEV job when native editing checks pass. Workload totals reflect this selected sample.</div>' : '';
 function card(p) {
   const designer=assignedDesigner(p), due=daysUntil(p.dueDate), files=uniqueAttachments(p).length;
   return `<article class="card" data-project="${e(p.id)}" ${p.readOnly?'data-readonly="true"':''} ${canEdit(p)?'draggable="true"':''} aria-label="${e(`${p.id}: ${p.title}`)}">
@@ -68,7 +69,7 @@ function card(p) {
     <div class="card-footer"><span class="person">${designer?avatar(designer):''}${e(designer?personName(designer):p.requestedDesigner?(p.readOnly?`Requested: ${personName(p.requestedDesigner)}`:`Offered to ${personName(p.requestedDesigner).split(' ')[0]}`):'Unassigned')}</span><a class="card-link" href="#/projects/${encodeURIComponent(p.id)}">View job →</a></div>
   </article>`;
 }
-function offersForCurrent() { return state.projects.filter(p => !p.readOnly && isActive(p) && p.requestedDesigner === state.person && !['accepted','declined'].includes(p.response)); }
+function offersForCurrent() { return state.projects.filter(p => authenticated?p.permissions?.respond===true:!p.readOnly&&isActive(p)&&p.requestedDesigner===state.person&&!['accepted','declined'].includes(p.response)); }
 function offerPanel() {
   const offers=offersForCurrent();
   if(!offers.length) return `<section class="panel offer-panel"><div class="eyebrow">Project offers</div><h3>No offers waiting</h3><p>New project offers will appear here for the selected ${connected?'test':'demo'} designer.</p><a class="card-link" href="#/projects">Explore the team board →</a></section>`;
@@ -106,8 +107,8 @@ function renderCollection(type) {
   const offers=type==='my-work'?offersForCurrent():[];
   return `${breadcrumbs([[title]])}${heading(title,intro,'Project workspace',`<a class="button button-primary" href="#/new">${icon('plus')}New request</a>`)}
     ${copiedNotice()}${offers.length?`<div class="notice notice-warning"><strong>${offers.length} project offer${offers.length===1?'':'s'} waiting.</strong> <a class="inline-link" href="#/projects/${encodeURIComponent(offers[0].id)}">Review ${e(offers[0].title)} →</a></div>`:''}
-    <div class="toolbar"><label class="search">${icon('search')}<input id="project-search" type="search" placeholder="Search by project title, job number or requester" aria-label="Search projects" value="${e(state.query)}"></label><div class="filter-controls">${state.projects.some(p=>p.readOnly)?`<select id="source-filter" aria-label="Filter by project source">${[['all','All projects'],['copied','Copied projects · Read-only'],['test','Test projects']].map(([value,label])=>`<option value="${value}" ${state.filterSource===value?'selected':''}>${label}</option>`).join('')}</select>`:''}${type!=='my-work'?`<select id="designer-filter" aria-label="Filter by designer"><option value="">All designers</option>${state.designers.map(d=>`<option value="${e(d.id)}" ${state.filterDesigner===d.id?'selected':''}>${e(d.name)}</option>`).join('')}</select>`:''}<select id="stage-filter" aria-label="Filter by stage"><option value="">All stages</option>${(type==='archive'?['Completed','Archived']:type==='my-work'?['Accepted','In Progress','In Review']:STAGES.filter(s=>!CLOSED.has(s))).map(s=>`<option ${state.filterStage===s?'selected':''}>${e(s)}</option>`).join('')}</select>${type!=='archive'?`<div class="view-toggle" aria-label="Project display"><button data-action="board-view" class="${state.view==='board'?'active':''}" aria-pressed="${state.view==='board'}">${icon('board')}Board</button><button data-action="list-view" class="${state.view==='list'?'active':''}" aria-pressed="${state.view==='list'}">${icon('list')}List</button></div>`:''}</div></div>
-    <div id="collection-results">${collectionResults(type)}</div><p class="quiet-note">${readonly()?'Read-only DEV connection. Changes to Smartsheet are disabled.':live()?'Editable test cards can change stage. Copied project cards remain read-only.':'Drag your assigned cards to change stage, or use the stage control on the job page. All changes are demo-only.'}</p>`;
+    <div class="toolbar"><label class="search">${icon('search')}<input id="project-search" type="search" placeholder="Search by project title, job number or requester" aria-label="Search projects" value="${e(state.query)}"></label><div class="filter-controls">${state.projects.some(p=>p.readOnly)?`<select id="source-filter" aria-label="Filter by project source">${[['all','All projects'],['copied','Copied DEV projects'],['test','Test projects']].map(([value,label])=>`<option value="${value}" ${state.filterSource===value?'selected':''}>${label}</option>`).join('')}</select>`:''}${type!=='my-work'?`<select id="designer-filter" aria-label="Filter by designer"><option value="">All designers</option>${state.designers.map(d=>`<option value="${e(d.id)}" ${state.filterDesigner===d.id?'selected':''}>${e(d.name)}</option>`).join('')}</select>`:''}<select id="stage-filter" aria-label="Filter by stage"><option value="">All stages</option>${(type==='archive'?['Completed','Archived']:type==='my-work'?['Accepted','In Progress','In Review']:STAGES.filter(s=>!CLOSED.has(s))).map(s=>`<option ${state.filterStage===s?'selected':''}>${e(s)}</option>`).join('')}</select>${type!=='archive'?`<div class="view-toggle" aria-label="Project display"><button data-action="board-view" class="${state.view==='board'?'active':''}" aria-pressed="${state.view==='board'}">${icon('board')}Board</button><button data-action="list-view" class="${state.view==='list'?'active':''}" aria-pressed="${state.view==='list'}">${icon('list')}List</button></div>`:''}</div></div>
+    <div id="collection-results">${collectionResults(type)}</div><p class="quiet-note">${readonly()?'Read-only DEV connection. Changes to Smartsheet are disabled.':live()?'Editable test cards can change stage. Copied DEV cards require admin edit permission.':'Drag your assigned cards to change stage, or use the stage control on the job page. All changes are demo-only.'}</p>`;
 }
 function fileRows(p) {
   const files=uniqueAttachments(p);
@@ -124,10 +125,10 @@ function renderDetail(id, focusReferences=false) {
   const assigned=assignedDesigner(p), ownOffer=authenticated?p.permissions?.respond===true:!readonly()&&p.requestedDesigner===state.person&&!['accepted','declined'].includes(p.response)&&isActive(p);
   const refcount=uniqueAttachments(p).length+(p.references||[]).length;
   return `${breadcrumbs([['Projects',`#/${state.lastWorkspace}`],[p.id]])}
-    <div class="page-heading detail-heading"><div><div class="detail-overline"><span class="job-id">${e(p.id)}</span>${stageTag(p.stage)}${p.priority==='High'?'<span class="priority priority-high">High priority</span>':''}</div><h1>${e(p.title)}</h1><p>${e(p.taskType||'Task type not specified')}</p></div><div class="page-actions"><a class="button button-small" href="#/${state.lastWorkspace}">← Back to projects</a>${canEdit(p)?`<button class="button button-primary button-small" data-action="edit-project" data-id="${e(p.id)}">Edit job</button>`:''}</div></div>
-    ${p.readOnly?'<div class="notice"><strong>Copied project · Read-only.</strong> Original information is shown from the DEV sheet. Editing, assignment, uploads and AI processing are disabled for this record.</div>':''}
+    <div class="page-heading detail-heading"><div><div class="detail-overline"><span class="job-id">${e(p.id)}</span>${stageTag(p.stage)}${p.priority==='High'?'<span class="priority priority-high">High priority</span>':''}</div><h1>${e(p.title)}</h1><p>${e(p.taskType||'Task type not specified')}</p></div><div class="page-actions"><a class="button button-small" href="#/${state.lastWorkspace}">← Back to projects</a>${canEdit(p)?`<button class="button button-primary button-small" data-action="edit-project" data-id="${e(p.id)}">Edit job</button>`:''}${canDelete(p)?`<button class="button button-small" data-action="delete-project" data-id="${e(p.id)}">Move to Deleted</button>`:''}</div></div>
+    ${p.readOnly?`<div class="notice"><strong>${state.actor?.role==='admin'?'Copied DEV project.':'Copied project · Read-only.'}</strong> ${state.actor?.role==='admin'?'Admin access applies to this selected DEV job; native edit checks still apply.':'Editing, assignment and uploads are unavailable for this copied record.'} AI context/draft tools remain disabled for copied jobs.</div>`:''}
     ${readonly()?'<div class="notice"><strong>Read-only DEV preview.</strong> This page reads the selected job directly. It does not change the native sheet or dashboard selection.</div>':''}
-    ${!p.readOnly&&ownOffer?`<div class="notice notice-warning"><strong>This job has been offered to you.</strong> Review the request and references, then accept or decline.<div class="offer-actions"><button class="button button-primary button-small" data-action="accept" data-id="${e(p.id)}">${icon('check')}Accept this job</button><button class="button button-small" data-action="decline" data-id="${e(p.id)}">Decline / return to Graphics</button></div></div>`:''}
+    ${ownOffer?`<div class="notice notice-warning"><strong>This job has been offered to you.</strong> Review the request and references, then accept or decline.<div class="offer-actions"><button class="button button-primary button-small" data-action="accept" data-id="${e(p.id)}">${icon('check')}Accept this job</button><button class="button button-small" data-action="decline" data-id="${e(p.id)}">Decline / return to Graphics</button></div></div>`:''}
     <div class="detail-grid"><div class="detail-main"><dl class="facts"><div><dt>Task type</dt><dd>${e(p.taskType||'Not specified')}</dd></div><div><dt>Estimated hours</dt><dd>${p.hours == null ? 'Not estimated' : `${Number(p.hours)||0} hours`}</dd></div><div><dt>Due date</dt><dd>${e(formatDate(p.dueDate))}</dd></div><div><dt>Assigned designer</dt><dd>${e(personName(assigned))}</dd></div></dl>
       <section class="detail-section"><h2>${icon('brief')}${live()?'Project details & notes':'Project description'}</h2><p>${e(p.description||'No project description supplied.')}</p></section>
       <section class="detail-section"><h2>Deliverables & requirements</h2><p>${e(p.deliverables||'Not yet specified.')}</p>${p.audience?`<p><br><strong>Audience:</strong> ${e(p.audience)}</p>`:''}${p.specifications?`<p><br><strong>Production specifications:</strong> ${e(p.specifications)}</p>`:''}</section>
@@ -137,7 +138,7 @@ function renderDetail(id, focusReferences=false) {
     </div><aside class="detail-side">
       <section class="panel"><h2>Request information</h2><dl class="metadata"><div><dt>Requestor</dt><dd>${e(p.requestor||'Not specified')}</dd></div><div><dt>Email</dt><dd>${e(p.email||'Not specified')}</dd></div><div><dt>Group / department</dt><dd>${e(p.requestorGroup||(live()?'See project details':'Not specified'))}</dd></div><div><dt>Received</dt><dd>${e(formatDate(p.createdDate))}</dd></div><div><dt>Completed</dt><dd>${e(formatDate(p.completedDate))}</dd></div></dl></section>
       <section class="panel detail-controls"><h2>Project stage</h2>${canEdit(p)?`<label for="job-stage">Update stage</label><select id="job-stage">${STAGES.map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select><button class="button button-primary button-small" data-action="save-stage" data-id="${e(p.id)}">Update stage</button>`:`${stageTag(p.stage)}${p.sourceStatus?`<p>Source status: ${e(p.sourceStatus)}</p>`:''}<p class="quiet-note">${p.readOnly?'Copied projects are read-only.':readonly()?'Stage changes are disabled in the read-only connection.':assigned?'Switch to the assigned demo designer or coordinator to update this project.':'Assignment is recorded only after the offered designer accepts.'}</p>`}</section>
-      ${!p.readOnly&&!readonly()&&isCoordinator()&&!assigned&&(!authenticated||p.permissions?.offer)?`<section class="panel detail-controls"><h2>Offer to a designer</h2><label for="offer-designer">Requested designer</label><select id="offer-designer">${state.designers.filter(d=>d.canReceiveOffer!==false).map(d=>`<option value="${e(d.id)}" ${d.id===p.requestedDesigner?'selected':''}>${e(d.name)}</option>`).join('')}</select><button class="button button-primary button-small" data-action="offer" data-id="${e(p.id)}">${live()?'Save designer offer':'Record demo offer'}</button><p class="quiet-note">No email is sent. ${authenticated?'The invited designer records acceptance in their own signed-in session.':live()?'Use the offered designer’s local test view to record acceptance.':'The designer must accept in the demo.'}</p></section>`:''}
+      ${!readonly()&&isCoordinator()&&!assigned&&(!authenticated||p.permissions?.offer)?`<section class="panel detail-controls"><h2>Offer to a designer</h2><label for="offer-designer">Requested designer</label><select id="offer-designer">${state.designers.filter(d=>d.canReceiveOffer!==false).map(d=>`<option value="${e(d.id)}" ${d.id===p.requestedDesigner?'selected':''}>${e(d.name)}</option>`).join('')}</select><button class="button button-primary button-small" data-action="offer" data-id="${e(p.id)}">${live()?'Save designer offer':'Record demo offer'}</button><p class="quiet-note">No email is sent. ${authenticated?'The invited designer records acceptance in their own signed-in session.':live()?'Use the offered designer’s local test view to record acceptance.':'The designer must accept in the demo.'}</p></section>`:''}
       <section class="panel"><h2>Project connections</h2><dl class="metadata"><div><dt>SCOUT job</dt><dd>Not connected</dd></div><div><dt>Project folder</dt><dd>Not connected</dd></div></dl><p class="quiet-note">SCOUT and Dropbox integration are future work.</p></section>
     </aside></div>`;
 }
@@ -174,7 +175,8 @@ function notFound() { return `<div class="empty-state"><h1>Project not found</h1
 function updateChrome(path) {
   let nav=path==='/'?'home':path.split('/')[1]; if(path.startsWith('/projects/'))nav='projects';
   document.querySelectorAll('[data-nav]').forEach(a=>{const active=a.dataset.nav===nav;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-  document.querySelector('#reports-nav').hidden=!authenticated||state.actor?.role!=='coordinator';
+  document.querySelector('#deleted-nav').hidden=!authenticated;
+  document.querySelector('#reports-nav').hidden=!authenticated||!['coordinator','admin'].includes(state.actor?.role);
   document.querySelector('#my-count').textContent=myProjects(state.projects,state.person).length || '';
   const banner=document.querySelector('#mode-banner');banner.classList.toggle('live',readonly());
   banner.textContent=authenticated&&state.actor?`Private DEV pilot · ${state.actor.name} · ${live()?'Saves to Smartsheet':'Read-only access'}`:state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
@@ -193,8 +195,15 @@ function render({focus=false}={}) {
   else if(['/my-work','/projects','/archive'].includes(path))main.innerHTML=renderCollection(path.slice(1));
   else if(path==='/new')main.innerHTML=renderNew();
   else if(path==='/workload')main.innerHTML=renderWorkload();
+  else if(path==='/deleted'){
+    if(!authenticated)main.innerHTML='<h1>Deleted jobs</h1><p>Sign in to use the recoverable Deleted area.</p>';
+    else if(!main.querySelector('#deleted-root')){
+      main.innerHTML='<div id="deleted-root"><h1>Deleted jobs</h1><p>Loading recoverable jobs…</p></div>';
+      const root=main.querySelector('#deleted-root');import('./lifecycle.js').then(module=>{if(root.isConnected)module.mountDeleted({root,api,run:busy,onChanged:async()=>{applyWorkspace(await api('/projects'));updateChrome(route());}});}).catch(()=>{root.textContent='The Deleted area could not be loaded. Refresh this page.';});
+    }
+  }
   else if(path==='/reports'){
-    if(!authenticated||state.actor?.role!=='coordinator')main.innerHTML='<h1>Analytics & Reports</h1><p>This area is available to signed-in coordinators.</p>';
+    if(!authenticated||!['coordinator','admin'].includes(state.actor?.role))main.innerHTML='<h1>Analytics & Reports</h1><p>This area is available to signed-in coordinators.</p>';
     else if(!main.querySelector('#reports-root')){
       main.innerHTML='<div id="reports-root"><h1>Analytics & Reports</h1><p>Preparing your DEV reporting workspace…</p></div>';
       const root=main.querySelector('#reports-root');import('./reports.js').then(module=>{if(root.isConnected)module.mountReports({root,api,csrf:state.csrf});}).catch(()=>{root.textContent='Reporting could not be loaded. Refresh this page.';});
@@ -261,7 +270,7 @@ async function previewFile(id,fileId) {
   else modal(f.name,'<p>This file type is available to download. Inline preview is not enabled for this format.</p>',footer);
 }
 function about() {
-  if(authenticated){modal('About the DEV pilot',`<p>This invited pilot uses your Smartsheet login and your existing access to the DEV sheet. Your pilot role further limits the jobs and actions available to you.</p><p>Selected copied projects are read-only. Enabled saves update synthetic DEV jobs and add reference files. There are no delete operations. Native dashboard and workflow definitions are preserved.</p><p>${state.aiModule?'Agent-assisted AI context, draft import and review are enabled only for selected synthetic jobs; no model or source apply runs automatically.':'AI is not enabled in this session.'} General employee intake, email notifications, calendar access, SCOUT and Dropbox remain pending. This is a temporary development pilot, not a production service.</p>`);return;}
+  if(authenticated){modal('About the DEV pilot',`<p>This invited pilot uses your Smartsheet login and your existing access to the DEV sheet. Your pilot role further limits the jobs and actions available to you.</p><p>Admins can edit any selected DEV job when native checks pass. Other staff can edit their accepted assignments or newly created jobs. Move to Deleted is recoverable: admins can delete/restore any portal job; other staff can delete/restore only verified creations. Native rows and files are retained. Native dashboard and workflow definitions are preserved.</p><p>${state.aiModule?'Agent-assisted AI context, draft import and review are enabled only for selected synthetic jobs; no model or source apply runs automatically.':'AI is not enabled in this session.'} General employee intake, email notifications, calendar access, SCOUT and Dropbox remain pending. This is a temporary development pilot, not a production service.</p>`);return;}
   modal('About this prototype',`<p><strong>A separate proposal for a custom Graphics Portal.</strong> The public website uses fictional projects and people. It does not connect visitors to the native Smartsheet workspace.</p><ul><li>Try an employee request, switch demo designers, accept an offer and move work through its stages.</li><li>Each job has its own URL and reference section; there is no shared job selector.</li><li>Demo changes are held in this tab and reset on reload.</li><li>A separate local gateway can read approved DEV rows and, when explicitly started in DEV editing mode, save requests, edits and new attachments. It never deletes files or records.</li></ul><p>Public ORNL employee sign-in, AI, email, SCOUT and Dropbox are not connected. A separate invited OAuth pilot is available through its protected server.</p><p>This is a design draft, not an approved production service.</p>`,`<button class="button button-small" data-action="reset-demo" ${state.mode!=='demo'?'disabled':''}>Reset demo workspace</button><button class="button button-primary button-small" data-action="close-dialog">Continue exploring</button>`);
 }
 document.addEventListener('click',async event=>{
@@ -292,6 +301,10 @@ document.addEventListener('click',async event=>{
     if(action==='board-view'||action==='list-view'){state.view=action==='board-view'?'board':'list';render();return;}
     if(action==='show-designer'){state.query='';state.filterStage='';state.filterDesigner=button.dataset.person;state.lastWorkspace='projects';location.hash='#/projects';return;}
     if(action==='accept'||action==='decline'){await accept(id,action==='accept');return;}
+    if(action==='delete-project'){
+      const p=findProject(id);if(!p||!canDelete(p))throw new Error('Your account cannot delete this job.');
+      modal('Move job to Deleted',`<p><strong>${e(p.id)} · ${e(p.title)}</strong></p><p>This hides the job in the portal and its reports. The Smartsheet row and its files stay intact. An admin or the verified creator can restore it.</p><form id="delete-job-form" data-job="${e(p.id)}"><div class="field"><label for="delete-confirmation">Type ${e(p.id)} to confirm</label><input id="delete-confirmation" name="confirmation" required autocomplete="off"></div><div class="field"><label for="delete-reason">Reason (optional)</label><input id="delete-reason" name="reason" maxlength="500"></div><button class="button button-primary" type="submit">Confirm move to Deleted</button></form>`);return;
+    }
     if(action==='edit-project'){editProject(id);return;}
     if(action==='preview-file'){await previewFile(id,button.dataset.file);return;}
     if(action==='offer'){const designer=document.querySelector('#offer-designer').value;if(!isCoordinator()||!person(designer))throw new Error('Choose a valid demo designer.');await mutate(id,p=>({...p,requestedDesigner:designer,response:'',stage:'Assigned'}),{action:'offer',designer});toast(live()?'Designer offer saved to Smartsheet. No email was sent.':'Demo offer recorded. Switch to that designer to accept. No email was sent.');return;}
@@ -306,9 +319,15 @@ document.addEventListener('change',event=>{
 });
 document.addEventListener('input',event=>{if(event.target.id==='project-search'){state.query=event.target.value;updateCollection();}});
 document.addEventListener('submit',async event=>{
-  if(!['edit-form','request-form','reference-form'].includes(event.target.id))return;
+  if(!['edit-form','request-form','reference-form','delete-job-form'].includes(event.target.id))return;
   event.preventDefault();
   try {
+    if(event.target.id==='delete-job-form'){
+      const p=findProject(event.target.dataset.job);if(!p||!canDelete(p))throw new Error('Your account cannot delete this job.');
+      const values=Object.fromEntries(new FormData(event.target));
+      await busy(async()=>{await api('/v1/jobs/'+encodeURIComponent(p.id)+'/lifecycle',{method:'POST',body:{action:'delete',revision:p.revision,version:p.lifecycleVersion,confirmation:values.confirmation,reason:values.reason}});applyWorkspace(await api('/projects'));});
+      dialog.close();location.hash='#/deleted';toast('Job moved to the recoverable Deleted area.');return;
+    }
     if(readonly())throw new Error('DEV editing is not enabled.');
     const form=event.target;
     if(form.id==='reference-form'){
@@ -382,7 +401,7 @@ function setSyncStatus(kind,error){
   syncElement.textContent=kind==='saving'?'Saving to Smartsheet…':kind==='checking'?'Checking for updates…':kind==='paused'?'Sync paused while editing':kind==='error'?'Sync needs attention':'Synced '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}).format(lastSyncAt=new Date());
   syncElement.title=kind==='error'?(error?.message||'Refresh to retry.'):'Updates are checked while this tab is active.';
 }
-function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&!['/new','/reports'].includes(route())&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
+function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&!['/new','/reports','/deleted'].includes(route())&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
 for(const eventName of ['input','change'])main.addEventListener(eventName,event=>{
   const input=event.target;
   if(input.closest('form,#ai-panel')||input.matches('#job-stage,#offer-designer'))input.dataset.syncDirty='true';
@@ -390,7 +409,7 @@ for(const eventName of ['input','change'])main.addEventListener(eventName,event=
 const workspaceSync=createWorkspaceSync({
   canApply:canSync,
   read:force=>api(!force&&Number.isInteger(state.sourceVersion)?'/projects?sinceVersion='+state.sourceVersion:'/projects?refresh=1'),
-  apply:data=>{const before=JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode]);applyWorkspace(data);if(before!==JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode])){const active=document.activeElement,id=active?.id,start=active?.selectionStart;render();if(id){const next=document.getElementById(id);next?.focus({preventScroll:true});if(start!=null&&next?.setSelectionRange)next.setSelectionRange(start,start);}}},
+  apply:data=>{const before=JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode,state.actor]);applyWorkspace(data);if(before!==JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode,state.actor])){const active=document.activeElement,id=active?.id,start=active?.selectionStart;render();if(id){const next=document.getElementById(id);next?.focus({preventScroll:true});if(start!=null&&next?.setSelectionRange)next.setSelectionRange(start,start);}}},
   status:setSyncStatus,
   failed:error=>{if([401,403,502].includes(error.status)){state.projects=[];state.designers=[];state.mode='error';state.error=error.message;render();}}
 });

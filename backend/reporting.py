@@ -151,9 +151,9 @@ class Reporting:
 
     def _coordinator(self,sid,fresh=True):
         context=self.runtime.jobs._resolve(sid)
-        if context.principal.role!='coordinator':raise WriteError('Reports are available to coordinators only.',403)
+        if not context.principal.can_coordinate:raise WriteError('Reports are available to coordinators and admins only.',403)
         if fresh:context=self.runtime.jobs._fresh(sid)
-        if context.principal.role!='coordinator':raise WriteError('Your reporting access changed.',403)
+        if not context.principal.can_coordinate:raise WriteError('Your reporting access changed.',403)
         return context
 
     def _projects(self,context):
@@ -162,15 +162,15 @@ class Reporting:
             rows={row: (version,json.loads(payload)) for row,version,payload in db.execute(
                 'SELECT row_id,version,payload_json FROM reporting_profiles WHERE sheet_id=?',(context.reader.sheet_id,))}
         for source in context.reader._cache['projects']:
-            if not self.runtime.jobs._can_read(context.principal,source):continue
-            p=copy.deepcopy(source);version,meta=rows.get(p['_rowId'],(0,{}));p['reporting']=meta;p['metadataVersion']=version
+            if not self.runtime.jobs._can_read(context.principal,source) or self.runtime.lifecycle.is_deleted(context.reader.sheet_id,source['_rowId']):continue
+            p=copy.deepcopy(source);version,meta=rows.get(p['_rowId'],(0,{}));p['reporting']=meta;p['metadataVersion']=version;p['lifecycleVersion']=self.runtime.lifecycle.state(context.reader.sheet_id,p['_rowId'])['version']
             p['canAnnotate']=bool(self.runtime.jobs._permissions(context,p)['edit'])
             result.append(p)
         return result
 
     def _fingerprint(self,context,projects):
         return digest({'sheetVersion':context.reader.version,'copies':sorted(self.runtime.active_config().copied_row_ids),
-                       'rows':[(p['_rowId'],p['revision'],p['metadataVersion']) for p in projects]})
+                       'rows':[(p['_rowId'],p['revision'],p['metadataVersion'],p['lifecycleVersion']) for p in projects]})
 
     def snapshot(self,sid,body):
         if not isinstance(body,dict) or set(body)!={'filters'}:raise WriteError('Choose report filters.')
@@ -204,7 +204,7 @@ class Reporting:
         if values['evidenceUrl'] and not url_value({'value':values['evidenceUrl']}):raise WriteError('Enter a complete http(s) evidence URL without credentials.')
         with self.runtime.sheet_lock:
             context=self._coordinator(sid);project=self.runtime.jobs._project(context,job)
-            if not self.runtime.jobs._permissions(context,project)['edit']:raise WriteError('Reporting details can be edited only on currently editable test jobs.',403)
+            if not self.runtime.jobs._permissions(context,project)['edit']:raise WriteError('Your role or the native edit checks do not permit reporting changes to this job.',403)
             if body['sourceRevision']!=project['revision']:raise WriteError('The job changed. Refresh the report.',409)
             with self.runtime.db() as db:
                 db.execute('BEGIN IMMEDIATE')

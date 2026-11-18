@@ -1,13 +1,13 @@
 # Coordinator analytics and reports
 
-The private DEV portal includes **Analytics & Reports** at `/#/reports`. Sign in with an invited coordinator account. Designers and Microsoft requesters do not gain reporting access by choosing the coordinator tutorial. The public GitHub Pages demo has no private reporting connection.
+The private DEV portal includes **Analytics & Reports** at `/#/reports`. Sign in with an invited coordinator or admin account. Designers and Microsoft requesters do not gain reporting access by choosing the coordinator tutorial. The public GitHub Pages demo has no private reporting connection.
 
 ## Use the reporting workspace
 
 1. Open **Analytics & Reports** in the sidebar.
 2. Choose a period, source, designer, work type, directorate, impact level or current stage. Select **Apply filters / refresh**. Clicking a chart category applies that filter immediately.
 3. Review the monthly activity, work types, current stages, directorates, designer completions and workload. The monthly table provides the chart's underlying values. Small screens can scroll the monthly chart and data tables horizontally.
-4. Use **Classify a project** to add reporting details to an editable test job. Selected copied projects remain read-only. A high/strategic classification needs a justification. Record intended benefits separately from observed outcomes and link supporting evidence when available.
+4. Use **Classify a project** to add reporting details to an editable test job. Selected copied projects remain read-only for non-admins; admins may edit them when native checks pass. A high/strategic classification needs a justification. Record intended benefits separately from observed outcomes and link supporting evidence when available.
 5. Choose **Executive overview**, **Operations review** or **Impact briefing**. Include/exclude sections and use the arrow buttons to arrange them. Data coverage and definitions are always included.
 6. Download a PDF, editable Word document, editable PowerPoint, summary CSV or project CSV. Refresh the report after source changes or a snapshot-expiry message.
 
@@ -38,7 +38,7 @@ All views/downloads identify the **DEV sample**: permitted test jobs plus explic
 
 Directorate, division/program, impact level/category, justification, impact statement, intended outcome, observed outcome, evidence URL and reporting disposition are stored in private SQLite sidecar tables keyed by sheet ID and permanent native row ID. The original Smartsheet fields, formulas, attachments, native dashboards, workflows, sharing and schema are not changed. Labels are manually entered; coordinators should use consistent names to avoid split categories.
 
-Only coordinators with current access to the source and current permission to edit the test job can change these reporting fields. Existing write-enable, access-level and 24-hour workflow-review safeguards still apply. Copied rows cannot be annotated even in the sidecar. Source revisions and metadata versions prevent stale updates. An existing reporting tag is not automatically synchronized into a native Smartsheet column. Back up the private SQLite database to retain it.
+Only coordinators/admins with current access to the source and current permission to edit the job can change these reporting fields. Existing write-enable, access-level and 24-hour workflow-review safeguards still apply. Only admins may annotate selected copied rows; ordinary staff/coordinators retain copied-row protection. Source revisions and metadata versions prevent stale updates. An existing reporting tag is not automatically synchronized into a native Smartsheet column. Back up the private SQLite database to retain it.
 
 ## Download behavior
 
@@ -71,3 +71,5 @@ Schema migration **4** adds only `reporting_profiles` and `reporting_snapshots` 
 For rollback, stop the backend, retain the current database as a recovery copy, and restore the matched pre-migration database/config and previous code. A schema-3 backend should not be pointed at a schema-4 state file. Restoring the old database loses later portal-side records since that backup; retain the recovery copy for reconciliation. It does not undo native source changes made by other workflows.
 
 Production remains a separate IT deployment decision. This feature does not enable Microsoft requester intake, AI providers, notification delivery, SCOUT, Dropbox, tenant-wide sharing or a public report endpoint.
+
+Recoverable deletion is governed by [the current authorization policy](agent-authorization-audit.md). Deleted jobs are excluded from reports; delete/restore changes invalidate previous snapshots even when the native sheet version is unchanged. Admin copied-job access supersedes the earlier universal read-only-copy rule. Private state is now migration 5; retain a matched backup and use compatible code on rollback.

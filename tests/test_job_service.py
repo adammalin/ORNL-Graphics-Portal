@@ -30,7 +30,7 @@ class JobServiceTests(PilotTestCase):
         self.assertTrue(capabilities['jobActionsAreScoped'])
         self.assertTrue(capabilities['canCreate'])
         self.assertFalse(any(capabilities['features'].values()))
-        self.assertFalse(any(capabilities['constraints'].values()))
+        self.assertFalse(capabilities['constraints']['deletion']);self.assertFalse(capabilities['constraints']['sharedTokenFallback']);self.assertTrue(capabilities['constraints']['recoverableDeletion'])
         for secret in ['csrf', 'access_token', 'client_secret', 'sessionId']:
             self.assertNotIn(secret, capabilities)
 

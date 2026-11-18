@@ -1,5 +1,6 @@
 # DEV portal QA and security review — November 18, 2026
 
+> Policy update: see [the current user/agent authorization audit](agent-authorization-audit.md) for explicit admin access to selected copied DEV jobs and recoverable portal deletion. Earlier no-delete/read-only-copy results below describe their original qualification scope.
 Status: bounded review completed; reproducible fixes loaded into the laptop DEV pilot. **139 automated tests pass (15 JavaScript, 124 Python)**. No authorization bypass was reproduced in the tested cases. This is not an independent penetration test or production security certification.
 
 ## Scope and preservation

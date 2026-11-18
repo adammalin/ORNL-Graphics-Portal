@@ -30,6 +30,14 @@ class Principal:
     client_id: str = 'portal-browser'
     execution_origin: str = 'browser'
 
+    @property
+    def is_admin(self):
+        return self.role == 'admin'
+
+    @property
+    def can_coordinate(self):
+        return self.role in ('admin','coordinator')
+
     @classmethod
     def from_session(cls, session):
         actor = session.actor

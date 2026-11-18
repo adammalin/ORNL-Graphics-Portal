@@ -225,10 +225,11 @@ class SmartsheetReader:
         rows_path = f'/sheets/{self.sheet_id}/rows'
         is_rows = path == rows_path and method in ('POST', 'PUT') and isinstance(payload, list) and len(payload) == 1
         match = re.fullmatch(re.escape(rows_path) + r'/(\d+)/attachments', path)
-        is_upload = method == 'POST' and match and match[1] in self.row_ids and match[1] not in self.copied_row_ids and isinstance(payload, bytes)
+        admin_row = lambda rid: bool(self.store and self.store.permits_admin_row(str(rid)))
+        is_upload = method == 'POST' and match and ((match[1] in self.row_ids and match[1] not in self.copied_row_ids) or admin_row(match[1])) and isinstance(payload, bytes)
         if not (is_rows or is_upload):
             raise WriteError('This operation is outside the DEV write boundary.', 403)
-        if is_rows and method == 'PUT' and (str(payload[0].get('id')) not in self.row_ids or str(payload[0].get('id')) in self.copied_row_ids):
+        if is_rows and method == 'PUT' and not admin_row(payload[0].get('id')) and (str(payload[0].get('id')) not in self.row_ids or str(payload[0].get('id')) in self.copied_row_ids):
             raise WriteError('This row is outside the DEV write boundary.', 403)
         self.audit.append({'method': method, 'resource': kind})
         if self._transport:

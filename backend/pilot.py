@@ -106,8 +106,8 @@ class PilotConfig:
         for item in value.get('invites', []):
             email = str(item.get('email', '')).strip().lower()
             role = item.get('role', 'designer')
-            if not EMAIL.fullmatch(email) or role not in ('designer', 'coordinator') or email in self.invites:
-                raise WriteError('Each invite needs a unique email and designer/coordinator role.', 503)
+            if not EMAIL.fullmatch(email) or role not in ('designer', 'coordinator', 'admin') or email in self.invites:
+                raise WriteError('Each invite needs a unique email and designer/coordinator/admin role.', 503)
             self.invites[email] = role
         if not self.invites or len(self.invites) > 20:
             raise WriteError('Configure between one and twenty named pilot invites.', 503)
@@ -321,6 +321,8 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         raise WriteError('Enter the OAuth app secret at the hidden local prompt.',503)
     config = config if isinstance(config,PilotConfig) else PilotConfig(config)
     runtime = PilotRuntime(config,OAuthClient(config.client_id,secret,config.origin,oauth_transport),reader_factory,reload_config)
+    from backend.job_lifecycle import JobLifecycle
+    runtime.lifecycle = JobLifecycle(runtime)
     app = Flask(__name__,static_folder=None)
     app.config.update(MAX_CONTENT_LENGTH=MAX_FILE_BYTES,TRUSTED_HOSTS=[config.host,'127.0.0.1','localhost'])
     app.extensions['pilot'] = runtime
@@ -465,7 +467,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
             actor = requester_service().session(request.cookies.get(employee_intake.COOKIE)).actor
             return 'microsoft:'+actor.key, 'requester', 'requester'
         actor = signed_in().actor
-        return 'smartsheet:'+actor.user_id, 'staff', 'coordinator' if actor.role=='coordinator' else 'designer'
+        return 'smartsheet:'+actor.user_id, 'staff', 'coordinator' if actor.role in ('coordinator','admin') else 'designer'
 
     def tutorial_response(employee=False):
         principal,kind,default = tutorial_identity(employee)
@@ -517,7 +519,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         old = request.cookies.get(SESSION_COOKIE)
         if old:
             runtime.logout(old)
-        response = redirect('/#/projects' if session.actor.role == 'coordinator' else '/#/my-work',303)
+        response = redirect('/#/projects' if session.actor.role in ('coordinator','admin') else '/#/my-work',303)
         response.set_cookie(SESSION_COOKIE,sid,max_age=int(session.expires-time.time()),secure=True,httponly=True,samesite='Lax',path='/')
         response.delete_cookie(LOGIN_COOKIE,secure=True,httponly=True,samesite='Lax',path='/')
         return response
@@ -599,6 +601,14 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         return jsonify(runtime.ai.review(request.cookies.get(SESSION_COOKIE),job,draft,
             request.headers.get('Idempotency-Key',''),ai_body(16384)))
 
+    @app.get('/api/v1/deleted-jobs')
+    def deleted_jobs():
+        return jsonify(runtime.lifecycle.list(request.cookies.get(SESSION_COOKIE)))
+
+    @app.post('/api/v1/jobs/<job>/lifecycle')
+    def change_job_lifecycle(job):
+        return jsonify(runtime.lifecycle.change(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),job,request_json(4096)))
+
     @app.get('/api/projects')
     def projects():
         sid = request.cookies.get(SESSION_COOKIE)
@@ -650,7 +660,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','tutorial.js','tutorial-content.js','requester.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

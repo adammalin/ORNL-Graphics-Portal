@@ -1,3 +1,4 @@
+import {readPortalJson} from './http-client.js';
 /* Stage 1: private browser-agent handoff. No model runner or source apply. */
 import {escapeHtml as e} from './domain.js';
 export async function mount({root,job,csrf}) {
@@ -11,10 +12,7 @@ export async function mount({root,job,csrf}) {
     const response=await fetch(base+path,{method,credentials:'same-origin',cache:'no-store',
       headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':csrf,'Idempotency-Key':key||crypto.randomUUID()},
       body:body===undefined?undefined:raw?body:JSON.stringify(body)});
-    if(!response.headers.get('content-type')?.includes('application/json')) throw new Error('Network sign-in is required, or the pilot is unavailable. Reopen the authenticated pilot; this operation is not confirmed.');
-    const result=await response.json();
-    if(!response.ok)throw new Error(result.error||'The AI operation could not be confirmed.');
-    return result;
+    return readPortalJson(response);
   }
   function status(text,error=false){const target=root.querySelector('[data-testid=operation-status]');if(target){target.textContent=text;target.classList.toggle('notice-warning',error);}}
   function coverage(analysis){return `<h4>Reference coverage</h4><p>${analysis.coverage.reviewedSourceIds.length} sources declared reviewed; ${analysis.coverage.unreadSources.length} unread.</p>${analysis.coverage.unreadSources.length?`<ul>${analysis.coverage.unreadSources.map(s=>`<li>${e(s.sourceId)}: ${e(s.reason)}</li>`).join('')}</ul>`:''}`;}

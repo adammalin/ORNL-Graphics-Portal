@@ -67,6 +67,9 @@ def url_value(cell):
     except ValueError:
         return None
 
+def media_type(value):
+    return str(value or '').partition(';')[0].strip().lower()
+
 def date_value(cell):
     value = str(cell.get('value') or '')
     return value[:10] if len(value) >= 10 and value[4:5] == '-' and value[7:8] == '-' else ''
@@ -258,10 +261,17 @@ class SmartsheetReader:
         metadata = self._get_json(f'/sheets/{self.sheet_id}/attachments/{attachment_id}', 'verified-dev-attachment')
         if str(metadata.get('id')) != attachment_id:
             raise GatewayError('Unexpected attachment response.')
-        parsed = urlsplit(metadata.get('url', ''))
-        host = parsed.hostname or ''
-        if parsed.scheme != 'https' or parsed.username or parsed.password or not (host.endswith('.amazonaws.com') or host.endswith('.smartsheet.com')):
-            raise GatewayError('The attachment host is not supported by this pilot.')
+        try:
+            url = metadata.get('url', '')
+            if not isinstance(url, str):
+                raise ValueError()
+            parsed = urlsplit(url)
+            host = parsed.hostname or ''
+            if (parsed.scheme != 'https' or parsed.username or parsed.password or parsed.port not in (None, 443)
+                    or not (host.endswith('.amazonaws.com') or host.endswith('.smartsheet.com'))):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise GatewayError('The attachment host is not supported by this pilot.') from None
         request = Request(metadata['url'], method='GET')  # Never forward Smartsheet credentials.
         try:
             with self._opener.open(request, timeout=25) as response:
@@ -354,6 +364,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 parts = path.strip('/').split('/')
                 if len(parts) == 5 and parts[:2] == ['api', 'projects'] and parts[3] == 'attachments':
                     content, mime, name = self.server.reader.attachment(unquote(parts[2]), parts[4])
+                    mime = media_type(mime)
                     allowed_preview = {'image/png', 'image/jpeg', 'image/webp', 'text/plain'}
                     download = 'download' in parse_qs(urlsplit(self.path).query) or mime not in allowed_preview
                     disposition = f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(name, safe='')}"

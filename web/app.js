@@ -1,3 +1,4 @@
+import {readPortalJson,mediaType} from './http-client.js';
 import {createWorkspaceSync} from './workspace-sync.js';
 import {searchSelect,mountSearchSelects,showChoiceError,uniqueChoices} from './search-select.js';
 import { STAGES, CLOSED, DESIGNERS, TASK_TYPES, assignedDesigner, isActive, myProjects, metrics, workload, moveProject, safeUrl, escapeHtml as e, filterProjects, validateRequest, daysUntil } from './domain.js';
@@ -209,8 +210,7 @@ function applyWorkspace(data) {
 async function api(path, {method='GET',body,key,headers={}}={}) {
   if(config.apiBase!=='/api')throw new Error('The local gateway configuration is invalid.');
   const response=await fetch((path.startsWith('/auth/')?'':'/api')+path,{method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':state.csrf||config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)});
-  const data=await response.json();if(!response.ok){const error=new Error(data.error||'The DEV operation could not be confirmed. Refresh and inspect the job.');error.status=response.status;throw error;}
-  return data;
+  return readPortalJson(response);
 }
 async function busy(task) {
   if(state.saving)throw new Error('A save is already in progress.');
@@ -246,9 +246,10 @@ async function uploadFiles(id, files) {
 
 async function previewFile(id,fileId) {
   const p=findProject(id),f=p?.attachments?.find(x=>x.id===fileId),url=f&&fileUrl(f);if(!f||!url)throw new Error('This demo file is no longer available.');
+  const type=mediaType(f.type);
   const footer=`<a class="button button-primary button-small" href="${e(fileUrl(f,true))}" download>Download file ↓</a>`;
-  if(['image/png','image/jpeg','image/webp'].includes(f.type)||(!f.remote&&f.url==='./assets/references/reference-layout.svg'))modal(f.name,`<img src="${e(url)}" alt="${e(`Reference preview: ${f.name}`)}">`,footer);
-  else if(f.type==='text/plain') { const response=await fetch(url,{credentials:'same-origin'});if(!response.ok)throw new Error('The file could not be opened.');const text=await response.text();modal(f.name,`<pre>${e(text.slice(0,50000))}</pre>`,footer); }
+  if(['image/png','image/jpeg','image/webp'].includes(type)||(!f.remote&&f.url==='./assets/references/reference-layout.svg'))modal(f.name,`<img src="${e(url)}" alt="${e(`Reference preview: ${f.name}`)}">`,footer);
+  else if(type==='text/plain') { const response=await fetch(url,{credentials:'same-origin'});if(!response.ok)throw new Error('The file could not be opened.');const text=await response.text();modal(f.name,`<pre>${e(text.slice(0,50000))}</pre>`,footer); }
   else modal(f.name,'<p>This file type is available to download. Inline preview is not enabled for this format.</p>',footer);
 }
 function about() {

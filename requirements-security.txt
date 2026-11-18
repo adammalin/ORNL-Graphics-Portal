@@ -1,0 +1,3 @@
+# Optional QA tools; install outside the running pilot environment.
+pip-audit==2.10.1
+bandit==1.9.4

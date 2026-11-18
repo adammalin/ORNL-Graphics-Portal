@@ -25,7 +25,7 @@ from urllib.request import Request, build_opener
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
 try:
-    from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
+    from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
     from backend.dev_store import WriteError
     from backend.principals import Actor
     from backend.job_service import JobService, PilotStore
@@ -36,7 +36,7 @@ try:
     from backend.pilot_credentials import CredentialError, client_id_from_config, load_secret
     from backend.onboarding import Onboarding
 except ImportError:
-    from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES
+    from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
     from dev_store import WriteError
     from principals import Actor
     from job_service import JobService, PilotStore
@@ -65,6 +65,17 @@ def utc_time(value):
         return parsed.timestamp()
     except (AttributeError, ValueError, TypeError):
         raise WriteError('Pilot expiry/review dates must be timezone-aware ISO timestamps.', 503) from None
+
+
+def check_port_available(port):
+    try:
+        with socket.socket() as probe:
+            # Match the server's reuse behavior after a graceful stop. TIME_WAIT
+            # connections must not be mistaken for a still-running listener.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(('127.0.0.1', port))
+    except OSError:
+        raise WriteError('Port '+str(port)+' is already in use. Reuse the existing pilot Terminal, or stop it with Ctrl+C before starting another server.', 503) from None
 
 
 class PilotConfig:
@@ -345,6 +356,13 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
             if not equal(request.headers.get('X-Portal-CSRF',''),s.csrf):
                 raise WriteError('Refresh the page before saving.',403)
 
+    def request_json(limit=128*1024):
+        if request.mimetype != 'application/json':
+            raise WriteError('Use an application/json request.', 415)
+        if request.content_length is not None and request.content_length > limit:
+            raise WriteError('Request JSON exceeds the permitted size.', 413)
+        return strict_json(request.stream.read(limit+1), limit, label='Request JSON')
+
     @app.after_request
     def headers(response):
         response.headers.update({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
@@ -418,7 +436,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     @app.post('/api/intake/requests')
     def employee_create():
         return jsonify(requester_service().create(request.cookies.get(employee_intake.COOKIE),
-            request.headers.get('Idempotency-Key', ''), request.get_json(silent=True)))
+            request.headers.get('Idempotency-Key', ''), request_json()))
 
     @app.get('/api/intake/requests/<receipt>')
     def employee_receipt(receipt):
@@ -452,7 +470,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
             return jsonify(tutorial.read(principal,kind,default))
         if request.content_length is None or request.content_length>4096:
             raise WriteError('The tutorial update is too large.',413)
-        return jsonify(tutorial.write(principal,kind,default,request.get_json(silent=True)))
+        return jsonify(tutorial.write(principal,kind,default,request_json(4096)))
 
     @app.route('/api/onboarding',methods=['GET','POST'])
     def staff_tutorial():
@@ -470,7 +488,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     def share_requester_resource(job):
         if request.content_length is None or request.content_length>4096:
             raise WriteError('The visibility update is too large.',413)
-        return jsonify(requester_service().tracking.share(request.cookies.get(SESSION_COOKIE),job,request.get_json(silent=True)))
+        return jsonify(requester_service().tracking.share(request.cookies.get(SESSION_COOKIE),job,request_json(4096)))
 
     @app.post('/api/intake/requests/<receipt>/attachments')
     def employee_upload(receipt):
@@ -571,11 +589,11 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.post('/api/projects')
     def create_project():
-        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request.get_json(silent=True)))
+        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request_json()))
 
     @app.patch('/api/projects/<job>')
     def update_project(job):
-        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request.get_json(silent=True),job))
+        return browser_workspace(runtime.jobs.perform(request.cookies.get(SESSION_COOKIE),request.headers.get('Idempotency-Key',''),request_json(),job))
 
     @app.post('/api/projects/<job>/attachments')
     def upload(job):
@@ -586,6 +604,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     @app.get('/api/projects/<job>/attachments/<attachment>')
     def attachment(job,attachment):
         content,mime,name = runtime.jobs.attachment(request.cookies.get(SESSION_COOKIE),job,attachment)
+        mime = media_type(mime)
         download = 'download' in request.args or mime not in {'image/png','image/jpeg','image/webp','text/plain'}
         response = Response(content,content_type='application/octet-stream' if download else mime)
         response.headers['Content-Disposition'] = ('attachment' if download else 'inline')+"; filename*=UTF-8''"+quote(name,safe='')
@@ -613,7 +632,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','tutorial.js','tutorial-content.js','requester.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)
@@ -628,11 +647,7 @@ def main():
     parser.add_argument('--secret-source', choices=('keychain', 'prompt'),
                         default='keychain' if sys.platform == 'darwin' else 'prompt')
     args = parser.parse_args()
-    try:
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', args.port))
-    except OSError:
-        raise WriteError('Port '+str(args.port)+' is already in use. Reuse the existing pilot Terminal, or stop it with Ctrl+C before starting another server.', 503) from None
+    check_port_available(args.port)
     path = Path(args.config).resolve()
     client_id = client_id_from_config(path)
     def load():

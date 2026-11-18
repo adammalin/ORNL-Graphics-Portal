@@ -36,6 +36,7 @@ class FakeSmartsheet:
     def __call__(self,path,method='GET',payload=None,headers=None):
         self.calls.append((method,path,copy.deepcopy(payload)))
         if method=='GET':
+            if urlsplit(path).path.endswith('/version'):return {'version':self.version}
             if '/automationrules' in path:return {'data':copy.deepcopy(self.rules)}
             if '/filters/' in path:return copy.deepcopy(self.saved_filter)
             query=parse_qs(urlsplit(path).query);ids=set(query.get('rowIds',[''])[0].split(','))

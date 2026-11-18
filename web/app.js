@@ -1,3 +1,5 @@
+import {createWorkspaceSync} from './workspace-sync.js';
+import {searchSelect,mountSearchSelects,showChoiceError,uniqueChoices} from './search-select.js';
 import { STAGES, CLOSED, DESIGNERS, TASK_TYPES, assignedDesigner, isActive, myProjects, metrics, workload, moveProject, safeUrl, escapeHtml as e, filterProjects, validateRequest, daysUntil } from './domain.js';
 import { demoProjects } from './demo-data.js';
 
@@ -28,7 +30,7 @@ const dialog = document.querySelector('#dialog');
 const config = window.PORTAL_CONFIG || { dataMode:'demo' };
 const authenticated = config.dataMode === 'pilot';
 const connected = authenticated || ['dev-readonly','dev-write'].includes(config.dataMode);
-const state = { trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
+const state = { capabilities:null, sourceVersion:null, trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, departmentOptions:[], taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
 const live = () => state.mode === 'dev-write';
 const readonly = () => !['demo','dev-write'].includes(state.mode);
 const person = id => state.designers.find(d => d.id === id);
@@ -72,11 +74,15 @@ function offerPanel() {
   const p=offers[0];return `<section class="panel offer-panel"><div class="eyebrow">${icon('brief')} Your next project?</div><h3>${e(p.title)}</h3><p>${e(p.taskType)}<br>Requested by ${e(p.requestor)}<br>Due ${e(formatDate(p.dueDate))}</p><div class="offer-actions"><a class="button button-primary button-small" href="#/projects/${encodeURIComponent(p.id)}">Review offer →</a></div><p class="quiet-note">Assignment is confirmed only after you accept.</p></section>`;
 }
 function teamMini() { return `<section class="panel team-mini"><h3>Team at a glance</h3>${workloadRows().filter(d=>!connected||d.jobs||d.offers).slice(0,6).map(d=>`<div class="mini-person">${avatar(d.id)}<span><strong>${e(d.name)}</strong><br>${d.jobs} active project${d.jobs===1?'':'s'}</span><span>${d.hours}h</span></div>`).join('')}<p class="quiet-note">Estimated work, not confirmed availability.</p><a class="card-link" href="#/workload">Explore team workload →</a></section>`; }
+function overviewOffers(){
+  const offers=offersForCurrent();
+  return `<section class="overview-offers ${offers.length?'has-offers':''}" aria-label="Your project offers"><div class="section-heading"><div><div class="eyebrow">Your next step</div><h2>${offers.length?'Offers waiting for your response':'You’re up to date'}</h2><p>${offers.length?`${offers.length} project offer${offers.length===1?'':'s'} to review. Accept a job to add it to My work.`:'No project offers are waiting for your response.'}</p></div><span class="offer-count" aria-label="${offers.length} waiting offers">${offers.length}</span></div>${offers.length?`<div class="overview-offer-grid">${offers.map(p=>`<article class="overview-offer"><span class="job-id">${e(p.id)} · Response needed</span><h3>${e(p.title)}</h3><p>${e(p.taskType||'Type not specified')}</p><dl><div><dt>Requested by</dt><dd>${e(p.requestor||'Not specified')}</dd></div><div><dt>Requested delivery</dt><dd>${e(formatDate(p.requestedDueDate||p.dueDate))}</dd></div></dl><a class="button button-primary" href="#/projects/${encodeURIComponent(p.id)}">Review & respond →</a></article>`).join('')}</div>`:''}</section>`;
+}
 function renderHome() {
   const own=person(state.person); const jobs=own?myProjects(state.projects,state.person):state.projects.filter(isActive);
-  return `<section class="hero"><div><div class="eyebrow">Graphics Portal · Workspace preview</div><h1>Your projects.<br>One shared workspace.</h1><p>Submit a clear request, follow the work, and keep project information close at hand.</p><div class="hero-actions"><a class="button button-energy" href="#/new">${icon('plus')}New project request</a><a class="button button-quiet" href="#/my-work">Explore my work ${icon('arrow')}</a></div></div><aside class="hero-aside">${icon('people')}<strong>For everyone<br>requesting Graphics work.</strong><p>Employee intake is part of the proposal—not limited to the Graphics team.</p><a href="#/new">Try the employee request form →</a></aside></section>
+  return `${overviewOffers()}<section class="hero"><div><div class="eyebrow">Graphics Portal · Workspace preview</div><h1>Your projects.<br>One shared workspace.</h1><p>Submit a clear request, follow the work, and keep project information close at hand.</p><div class="hero-actions"><a class="button button-energy" href="#/new">${icon('plus')}New project request</a><a class="button button-quiet" href="#/my-work">Explore my work ${icon('arrow')}</a></div></div><aside class="hero-aside">${icon('people')}<strong>For everyone<br>requesting Graphics work.</strong><p>Employee intake is part of the proposal—not limited to the Graphics team.</p><a href="#/new">Try the employee request form →</a></aside></section>
     ${stats(state.projects)}
-    <div class="home-columns"><section><div class="section-heading"><div><h2>${own?'My active projects':'Active projects'}</h2><p>${own?`${e(own.name)} · ${authenticated?'Signed-in designer':connected?'Local test':'Demo designer'} view`:'Team workspace preview'}</p></div><a href="#/${own?'my-work':'projects'}">View board →</a></div><div class="project-grid">${jobs.slice(0,4).map(card).join('')||'<div class="empty-state"><p>No active assignments for this view.</p></div>'}</div></section><aside class="home-side">${offerPanel()}${teamMini()}</aside></div>
+    <div class="home-columns"><section><div class="section-heading"><div><h2>${own?'My active projects':'Active projects'}</h2><p>${own?`${e(own.name)} · ${authenticated?'Signed-in designer':connected?'Local test':'Demo designer'} view`:'Team workspace preview'}</p></div><a href="#/${own?'my-work':'projects'}">View board →</a></div><div class="project-grid">${jobs.slice(0,4).map(card).join('')||'<div class="empty-state"><p>No active assignments for this view.</p></div>'}</div></section><aside class="home-side">${teamMini()}</aside></div>
     <section class="steps-strip" aria-label="How the portal works"><article><b>01 / REQUEST</b><h3>Start with the project</h3><p>Share the goal, deliverables, dates and reference material.</p></article><article><b>02 / COORDINATE</b><h3>Find the right designer</h3><p>Graphics reviews the request and records the designer’s acceptance.</p></article><article><b>03 / DELIVER</b><h3>Keep the work together</h3><p>Follow progress from a job page, then retain the completed record.</p></article></section>`;
 }
 function collectionBase(type) {
@@ -145,12 +151,12 @@ function renderNew() {
     <div class="form-layout"><form id="request-form" class="request-form" novalidate>
       <fieldset class="form-section"><legend><span>01</span>The project</legend><div class="form-grid">
         ${field('title','Project title',{required:true,full:true,help:'A short, descriptive name for the work.'})}
-        ${field('taskType','Type of work',{required:true,options:state.taskTypes,multiple:state.taskTypeMultiple,help:state.taskTypeMultiple?'Choose one or more categories. Use Ctrl (Windows) or Command (Mac) to select multiple.':''})}${field('dueDate','Requested due date',{type:'date'})}
+        ${searchSelect('taskType','Type of work',{required:true,options:state.taskTypes,multiple:state.taskTypeMultiple})}${field('dueDate','Requested due date',{type:'date'})}
         ${field('description','Project details',{required:true,full:true,rows:true,help:'What do you need, what should it communicate, and how will it be used?'})}
         ${field('deliverables','Deliverables and quantities',{full:true,help:'For example: one editable figure and a presentation-ready PNG.'})}
         ${field('audience','Intended audience')}${field('specifications','Dimensions / file formats')}
       </div></fieldset>
-      <fieldset class="form-section"><legend><span>02</span>Your information</legend><div class="form-grid">${field('requestor','Your name',{required:true})}${field('email','Your email',{type:'email',required:true})}${field('requestorGroup','Group / department',{full:true})}</div></fieldset>
+      <fieldset class="form-section"><legend><span>02</span>Your information</legend><div class="form-grid">${field('requestor','Your name',{required:true})}${field('email','Your email',{type:'email',required:true})}${searchSelect('requestorGroup','Group / department',{full:true,allowCustom:true,options:uniqueChoices([...state.departmentOptions,...state.projects.map(p=>p.requestorGroup)])})}</div></fieldset>
       <fieldset class="form-section"><legend><span>03</span>References and additional details</legend><div class="form-grid">${field('reference1','Reference link 1',{type:'url',full:true})}${field('reference2','Reference link 2',{type:'url',full:true})}<div class="field full"><label for="attachments">Reference files <span>(optional)</span></label><div class="upload-zone">${icon('upload')}<input id="attachments" name="attachments" type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"><p>Up to 10 test files, 30 MB each.<br>${live()?'Files are stored on the new DEV request in Smartsheet.':'Demo files stay in this tab until you reload.'}</p></div><span class="field-error" id="attachments-error"></span></div>${field('notes','Notes / additional details',{full:true,rows:true,help:'Include anything else the designer should know.'})}</div></fieldset>
       <div class="form-actions"><p>Fields marked * are required. No email, SCOUT job or Dropbox folder is created.</p><button class="button button-primary" type="submit">${live()?'Save DEV request':'Create demo request'} ${icon('arrow')}</button></div>
     </form><aside class="form-aside"><div class="eyebrow">Employee request experience</div><h2>A request form for the whole lab.</h2><p>The proposed live portal will allow ORNL employees outside Graphics to submit work without joining the Graphics workspace or accessing the project sheet.</p><hr><h2>What happens next?</h2><ol class="steps"><li>Graphics reviews your request and any references.</li><li>A designer is offered the project and records acceptance.</li><li>The team confirms details and follows the work through completion.</li></ol><hr><h2>A helpful starting point</h2><ul><li>Purpose and intended audience</li><li>Deliverables, quantities and dates</li><li>Reference examples and source material</li></ul><p>Not sure which category fits? Choose “Other / Not sure.”</p></aside></div>`;
@@ -198,19 +204,19 @@ function updateCollection() { const type=route().slice(1);const target=document.
 function applyWorkspace(data) {
   if(!['dev-readonly','dev-write'].includes(data.mode)||!Array.isArray(data.projects))throw new Error('Unexpected DEV response.');
   if(authenticated){if(!data.actor?.id)throw new Error('The pilot session could not be verified.');state.actor=data.actor;state.person=data.actor.id;state.csrf=data.csrf;state.canCreate=!!data.canCreate;state.teamWorkload=data.teamWorkload||null;}
-  state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
+  state.sourceVersion=data.sourceVersion??null;state.capabilities=data.capabilities||state.capabilities;state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.departmentOptions=data.departmentOptions||[];state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
 }
 async function api(path, {method='GET',body,key,headers={}}={}) {
   if(config.apiBase!=='/api')throw new Error('The local gateway configuration is invalid.');
   const response=await fetch((path.startsWith('/auth/')?'':'/api')+path,{method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':state.csrf||config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)});
-  const data=await response.json();if(!response.ok)throw new Error(data.error||'The DEV operation could not be confirmed. Refresh and inspect the job.');
+  const data=await response.json();if(!response.ok){const error=new Error(data.error||'The DEV operation could not be confirmed. Refresh and inspect the job.');error.status=response.status;throw error;}
   return data;
 }
 async function busy(task) {
   if(state.saving)throw new Error('A save is already in progress.');
-  state.saving=true;main.setAttribute('aria-busy','true');
+  workspaceSync.invalidate();setSyncStatus('saving');state.saving=true;main.setAttribute('aria-busy','true');
   document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=true);
-  try{return await task();}finally{state.saving=false;main.setAttribute('aria-busy','false');document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=false);}
+  try{const result=await task();setSyncStatus('synced');syncChannel?.postMessage('changed');return result;}catch(error){setSyncStatus('error',error);throw error;}finally{state.saving=false;main.setAttribute('aria-busy','false');document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=false);}
 }
 async function mutate(id, updater, change) {
   if(readonly())throw new Error('This DEV connection is read-only.');
@@ -222,7 +228,7 @@ async function mutate(id, updater, change) {
 async function accept(id,accepted) {
   const p=findProject(id);if(!p||p.requestedDesigner!==state.person||readonly())throw new Error(authenticated?'Only the offered designer can respond.':'Switch to the offered designer’s test view to respond.');
   await mutate(id,job=>({...job,response:accepted?'accepted':'declined',stage:accepted?'Accepted':'New'}),{action:accepted?'accept':'decline'});
-  toast(accepted?(live()?'Acceptance saved to Smartsheet. The native assignment formula controls My Work.':'Demo job accepted. It is now in My Work.'):(live()?'Decline saved to Smartsheet. The request is back with Graphics.':'Demo offer declined. The request is back with Graphics.'));
+  toast(accepted?(live()?'Acceptance saved to Smartsheet. This job is now in My work.':'Demo job accepted. It is now in My Work.'):(live()?'Decline saved to Smartsheet. The request is back with Graphics.':'Demo offer declined. The request is back with Graphics.'));
 }
 function editProject(id) {
   const p=findProject(id);if(!p||!canEdit(p))throw new Error('This project is not editable in the current preview.');
@@ -272,7 +278,7 @@ document.addEventListener('click',async event=>{
 
     if(action==='reload'){location.reload();return;}
     if(action==='sign-out'){await api('/auth/logout',{method:'POST',body:{}});location.href='/';return;}
-    if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');applyWorkspace(await api('/projects?refresh=1'));render();toast('Latest DEV values loaded.');return;}
+    if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');if(route()==='/new'||dialog.open)throw new Error('Finish or leave the form before refreshing. Your entries have been kept.');if(authenticated)await workspaceSync.check({force:true});else{applyWorkspace(await api('/projects?refresh=1'));render();setSyncStatus('synced');}return;}
     if(action==='reset-demo'){if(state.mode!=='demo'||authenticated)return;for(const f of state.files.values())URL.revokeObjectURL(f.url);state.files.clear();state.projects=demoProjects();dialog.close();if(route()!=='/')location.hash='#/';else render();toast('Synthetic workspace reset.');return;}
     if(action==='board-view'||action==='list-view'){state.view=action==='board-view'?'board':'list';render();return;}
     if(action==='show-designer'){state.query='';state.filterStage='';state.filterDesigner=button.dataset.person;state.lastWorkspace='projects';location.hash='#/projects';return;}
@@ -317,7 +323,7 @@ document.addEventListener('submit',async event=>{
     const errors=validateRequest(values),files=[...document.querySelector('#attachments').files];
     try{checkFiles(files);}catch(error){errors.attachments=error.message;}
     form.querySelectorAll('.field-error').forEach(el=>el.textContent='');form.querySelectorAll('[aria-invalid]').forEach(el=>{el.removeAttribute('aria-invalid');el.removeAttribute('aria-describedby');});
-    if(Object.keys(errors).length){for(const [key,message] of Object.entries(errors)){const error=form.querySelector(`#${key}-error`),input=form.elements.namedItem(key);if(error)error.textContent=message;if(input){input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby',`${key}-error`);}}form.elements.namedItem(Object.keys(errors)[0])?.focus();return;}
+    if(Object.keys(errors).length){for(const [key,message] of Object.entries(errors)){const error=form.querySelector(`#${key}-error`),input=form.elements.namedItem(key);if(error)error.textContent=message;if(input&&!form.querySelector(`[data-choice="${key}"]`)){input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby',`${key}-error`);}}const first=Object.keys(errors)[0];if(!showChoiceError(form,first,errors[first]))form.elements.namedItem(first)?.focus();return;}
     if(live()){
       let createdId;
       await busy(async()=>{
@@ -339,18 +345,20 @@ document.addEventListener('dragover',event=>{const lane=event.target.closest('.l
 document.addEventListener('dragleave',event=>{const lane=event.target.closest('.lane');if(lane&&!lane.contains(event.relatedTarget))lane.classList.remove('drag-over');});
 document.addEventListener('dragend',()=>{state.dragged=null;document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));});
 document.addEventListener('drop',async event=>{const lane=event.target.closest('.lane');if(!lane||!state.dragged)return;event.preventDefault();const p=findProject(state.dragged);state.dragged=null;try{if(!p||!canEdit(p))throw new Error('This project is read-only.');await mutate(p.id,p=>moveProject(p,lane.dataset.stage),{action:'stage',stage:lane.dataset.stage});toast(`${live()?'Smartsheet':'Demo'} project moved to ${lane.dataset.stage}.`);}catch(error){document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));toast(error.message,true);}});
-window.addEventListener('hashchange',()=>{state.query='';if(!route().startsWith('/projects')){state.filterDesigner='';state.filterStage='';}window.scrollTo({top:0,behavior:'instant'});render({focus:true});});
+window.addEventListener('hashchange',()=>{state.query='';if(route()==='/my-work')state.filterSource='all';if(!route().startsWith('/projects')){state.filterDesigner='';state.filterStage='';}window.scrollTo({top:0,behavior:'instant'});render({focus:true});if(authenticated)workspaceSync.check();});
 async function initialize(){
   if(connected){
     try{
-      applyWorkspace(await api('/projects?refresh=1'));
-      if(authenticated){try{const capabilities=await api('/v1/capabilities');state.trackingAvailable=capabilities.requesterTrackingAvailable===true;if(capabilities.features.aiContext)state.aiModule=await import('./ai-panel.js');}catch{/* Older running pilots keep their existing UI until restart. */}}
+      applyWorkspace(await api('/projects?refresh=1'));setSyncStatus('synced');
+      // Render the workspace without waiting for optional AI module loading.
+      render();
+      if(authenticated){try{const capabilities=state.capabilities||await api('/v1/capabilities');state.trackingAvailable=capabilities.requesterTrackingAvailable===true;if(capabilities.features.aiContext)state.aiModule=await import('./ai-panel.js');}catch{/* Older running pilots keep their existing UI until restart. */}}
       if(!authenticated)state.person='coordinator';
       document.querySelector('#preview-user').innerHTML='<option value="coordinator">Graphics coordinator · Local test</option>'+state.designers.map(d=>`<option value="${e(d.id)}">${e(d.name)} · Local test</option>`).join('')+'<option value="requester">Employee / requester · Local test</option>';
       document.querySelector('#preview-help').textContent=live()?'Local test controls. This is not employee authentication. Saves affect the DEV sheet.':'Local display filter only. Not an authenticated user session.';
     }catch(error){state.mode='error';state.projects=[];state.designers=[];state.error=error.message;}
   }
-  render();
+  if(!(route()==='/new'&&main.querySelector('[data-sync-dirty]')))render();
   if(authenticated&&state.mode!=='error'){try{await (await ensureTutorial()).initialize();}catch{/* Existing work remains usable if tutorial preferences are unavailable. */}}
 }
 let tutorialInstance;
@@ -358,4 +366,27 @@ async function ensureTutorial(){
   if(!tutorialInstance){const module=await import('./tutorial.js');tutorialInstance=module.createTutorial({kind:authenticated?'staff':'demo',role:state.actor?.role||'designer',aiAvailable:!!state.aiModule,trackingAvailable:state.trackingAvailable,request:authenticated?options=>api('/onboarding',options):null});}
   return tutorialInstance;
 }
+const syncElement=document.createElement('span');syncElement.id='workspace-sync';syncElement.className='workspace-sync';syncElement.setAttribute('role','status');syncElement.hidden=!connected;document.querySelector('#refresh-workspace').before(syncElement);
+let lastSyncAt=null;
+function setSyncStatus(kind,error){
+  if(!connected)return;syncElement.dataset.status=kind;
+  syncElement.textContent=kind==='saving'?'Saving to Smartsheet…':kind==='checking'?'Checking for updates…':kind==='paused'?'Sync paused while editing':kind==='error'?'Sync needs attention':'Synced '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}).format(lastSyncAt=new Date());
+  syncElement.title=kind==='error'?(error?.message||'Refresh to retry.'):'Updates are checked while this tab is active.';
+}
+function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&route()!=='/new'&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
+for(const eventName of ['input','change'])main.addEventListener(eventName,event=>{
+  const input=event.target;
+  if(input.closest('form,#ai-panel')||input.matches('#job-stage,#offer-designer'))input.dataset.syncDirty='true';
+});
+const workspaceSync=createWorkspaceSync({
+  canApply:canSync,
+  read:force=>api(!force&&Number.isInteger(state.sourceVersion)?'/projects?sinceVersion='+state.sourceVersion:'/projects?refresh=1'),
+  apply:data=>{const before=JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode]);applyWorkspace(data);if(before!==JSON.stringify([state.projects,state.designers,state.teamWorkload,state.mode])){const active=document.activeElement,id=active?.id,start=active?.selectionStart;render();if(id){const next=document.getElementById(id);next?.focus({preventScroll:true});if(start!=null&&next?.setSelectionRange)next.setSelectionRange(start,start);}}},
+  status:setSyncStatus,
+  failed:error=>{if([401,403,502].includes(error.status)){state.projects=[];state.designers=[];state.mode='error';state.error=error.message;render();}}
+});
+const syncChannel=authenticated&&'BroadcastChannel' in window?new BroadcastChannel('graphics-workspace-sync'):null;
+if(syncChannel)syncChannel.onmessage=()=>workspaceSync.check();
+if(authenticated){setInterval(()=>workspaceSync.check(),15000);window.addEventListener('focus',()=>workspaceSync.check());document.addEventListener('visibilitychange',()=>{if(!document.hidden)workspaceSync.check();});window.addEventListener('online',()=>workspaceSync.check());}
+mountSearchSelects();
 render();initialize();

@@ -31,6 +31,11 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / 'web'
 MAX_FILE_BYTES = 30 * 1024 * 1024
 
+try:
+    from backend.intake_choices import department_value
+except ImportError:
+    from intake_choices import department_value
+
 class GatewayError(Exception):
     pass
 
@@ -90,7 +95,7 @@ def normalize_sheet(sheet, sheet_id, row_ids, copied_row_ids=frozenset()):
             if key:
                 people[key] = {'id': key, 'name': name or key, 'initials': ''.join(p[:1] for p in (name or key).split()[:2]).upper(), 'capacity': None}
         response_text = v('Designer Response').lower()
-        response = 'accepted' if assigned_id else 'declined' if response_text.startswith('no') else ''
+        response = 'accepted' if assigned_id or (offered_id and response_text == 'yes - i can take this job.') else 'declined' if response_text.startswith('no') else ''
         designer_id = assigned_id or offered_id
         stage = v('Project Stage')
         source_status = v('Status') if copied else ''
@@ -121,7 +126,7 @@ def normalize_sheet(sheet, sheet_id, row_ids, copied_row_ids=frozenset()):
         if any(p['id'] == job_id for p in projects):
             raise GatewayError('Ambiguous DEV job identifier. No job details will be returned.')
         task_types = (cells.get('Task Type', {}).get('objectValue') or {}).get('values', [])
-        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': not copied, 'readOnly': copied, 'sourceStatus': source_status, 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'requestorGroup': '', 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
+        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': not copied, 'readOnly': copied, 'sourceStatus': source_status, 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'requestorGroup': department_value(cells, display), 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
     return projects, list(people.values())
 
 class SmartsheetReader:
@@ -204,7 +209,7 @@ class SmartsheetReader:
             self.version = sheet.get('version')
             if self.initial_version is None:
                 self.initial_version = self.version
-            self._cache = {'mode': 'dev-readonly', 'projects': projects, 'designers': designers}
+            self._cache = {'mode': 'dev-readonly', 'projects': projects, 'designers': designers, 'sourceVersion': self.version}
             if self.store:
                 self._cache.update(self.store.metadata())
                 self._cache['mode'] = 'dev-write'

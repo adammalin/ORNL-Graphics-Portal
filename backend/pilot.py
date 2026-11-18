@@ -565,7 +565,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/api/projects')
     def projects():
-        return browser_workspace(runtime.jobs.workspace(request.cookies.get(SESSION_COOKIE)))
+        sid = request.cookies.get(SESSION_COOKIE)
+        return browser_workspace(runtime.jobs.updates(sid, request.args['sinceVersion'])
+                                 if 'sinceVersion' in request.args else runtime.jobs.workspace(sid))
 
     @app.post('/api/projects')
     def create_project():
@@ -611,7 +613,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js','tutorial.js','tutorial-content.js','requester.js'}
+        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

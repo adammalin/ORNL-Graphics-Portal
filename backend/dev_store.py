@@ -71,9 +71,10 @@ class DevStore:
     def _write(self, *args, **kwargs):
         return self.reader._write(*args, **kwargs)
 
-    def validate_source(self):
+    def validate_source(self, *, source_current=False):
         r = self.reader
-        r.projects(force=True)
+        if not source_current or r.sheet is None:
+            r.projects(force=True)
         sheet = r.sheet
         if sheet.get('accessLevel') not in ('OWNER', 'ADMIN', 'EDITOR', 'EDITOR_SHARE'):
             raise WriteError('This API account does not have DEV editing access.', 403)
@@ -104,7 +105,11 @@ class DevStore:
             if email:
                 name = contact.get('name') or email
                 designers[email] = {'id': email, 'name': name, 'initials': ''.join(x[:1] for x in name.split()[:2]), 'capacity': None}
-        return {'designers': list(designers.values()), 'taskTypes': columns.get('Task Type', {}).get('options', []), 'taskTypeMultiple': columns.get('Task Type', {}).get('type') == 'MULTI_PICKLIST', 'priorities': columns.get('Priority', {}).get('options', [])}
+        try:
+            from backend.intake_choices import department_options
+        except ImportError:
+            from intake_choices import department_options
+        return {'departmentOptions': department_options(self.reader.sheet), 'designers': list(designers.values()), 'taskTypes': columns.get('Task Type', {}).get('options', []), 'taskTypeMultiple': columns.get('Task Type', {}).get('type') == 'MULTI_PICKLIST', 'priorities': columns.get('Priority', {}).get('options', [])}
 
     def row(self, job_id, expected=None):
         columns = {c['id']: c['title'] for c in self.reader.sheet['columns']}
@@ -196,7 +201,7 @@ class DevStore:
                 db.execute('INSERT OR IGNORE INTO rows VALUES (?,?)', (self.reader.sheet_id, str(row_id)))
             db.execute('UPDATE operations SET state=?,result=? WHERE sheet=? AND key=?', ('done', json.dumps(result), self.reader.sheet_id, key))
 
-    def perform(self, key, body, job_id=None):
+    def perform(self, key, body, job_id=None, *, source_current=False):
         if not isinstance(body, dict):
             raise WriteError('Invalid save request.')
         fingerprint = hashlib.sha256(json.dumps([job_id, body], sort_keys=True).encode()).hexdigest()
@@ -207,7 +212,7 @@ class DevStore:
             if prior:
                 done = self.begin(key, fingerprint)
                 return self.result(done['jobId'])
-            columns = self.validate_source()
+            columns = self.validate_source(source_current=True) if source_current else self.validate_source()
             if job_id is None:
                 if set(body) != {'fields'}:
                     raise WriteError('Invalid intake request.')
@@ -249,6 +254,8 @@ class DevStore:
                     raise WriteError('The request may be saved, but its generated job number is not ready. Refresh before submitting again.', 502)
                 job_id = projected['id']
                 self.finish(key, {'jobId': job_id}, row_id)
+                # This was just read back by permanent row ID; do not load it twice.
+                return {**self.reader._cache, 'jobId': job_id}
             else:
                 if set(body) - {'action', 'revision', 'fields', 'stage', 'designer'}:
                     raise WriteError('Unknown save parameter.')

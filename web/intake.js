@@ -1,3 +1,4 @@
+import {searchSelect,mountSearchSelects,showChoiceError} from './search-select.js';
 /* Authenticated employee form. This module never calls Smartsheet directly. */
 const main = document.querySelector('#main');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -24,7 +25,7 @@ function render() {
   <div class="form-layout"><form id="employee-request" class="request-form">
   <fieldset class="form-section" id="request-fields"><legend><span>01</span>The project</legend><div class="form-grid">
   ${field('title','Job title',{required:true,full:true})}
-  <div class="field"><label for="taskType">Task type *</label><select id="taskType" name="taskType" required ${session.taskTypeMultiple?'multiple':''}>${session.taskTypeMultiple?'':'<option value="">Choose a task type</option>'}${session.taskTypes.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>${session.taskTypeMultiple?'<small>Select all that apply.</small>':''}</div>
+  ${searchSelect('taskType','Type of work',{options:session.taskTypes,multiple:session.taskTypeMultiple,required:true})}
   ${field('dueDate','Requested due date',{type:'date'})}
   ${field('description','Project description',{required:true,full:true,rows:true})}
   ${field('deliverables','Deliverables and quantities',{full:true})}
@@ -32,7 +33,7 @@ function render() {
   </div></fieldset>
   <fieldset class="form-section" id="contact-fields"><legend><span>02</span>Your information</legend><div class="form-grid">
   ${field('requestor','Your name',{value:session.name,readonly:true})}${field('email','Your email',{type:'email',value:session.email,readonly:true})}
-  ${field('requestorGroup','Group / department',{value:session.department,full:true})}</div></fieldset>
+  ${searchSelect('requestorGroup','Group / department',{value:session.department,options:session.departmentOptions||[],full:true,allowCustom:true})}</div></fieldset>
   <fieldset class="form-section" id="reference-fields"><legend><span>03</span>References and additional details</legend><div class="form-grid">
   ${field('reference1','Reference link 1',{type:'url',full:true})}${field('reference2','Reference link 2',{type:'url',full:true})}
   <div class="field full"><label for="attachments">Reference files</label><div class="upload-zone"><input id="attachments" name="attachments" type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"><p>Up to 10 files, 30 MB each. PNG, JPEG, WebP, PDF or plain text.</p></div></div>
@@ -51,6 +52,7 @@ async function submit(event) {
   if (busy) return;
   const form = event.currentTarget;
   const status = document.querySelector('#form-status');
+  if(!new FormData(form).get('taskType')){showChoiceError(form,'taskType','Choose at least one type of work.');return;}
   const button = form.querySelector('button[type=submit]');
   if (!submission) {
     if (!form.reportValidity()) return;
@@ -103,6 +105,7 @@ async function help(){
   return requesterTutorial;
 }
 document.querySelector('#requester-help').addEventListener('click',async()=>{try{await (await help()).open();}catch{main.insertAdjacentHTML('afterbegin','<p role="status">The tutorial is unavailable. Please try again.</p>');}});
+mountSearchSelects();
 try {
   session=await api('session');
   if(location.pathname==='/my-requests'){const module=await import('./requester.js');await module.mountRequester({main,api,session});}else render();

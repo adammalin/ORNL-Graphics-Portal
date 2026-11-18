@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import copy
 import hashlib
 import re
+import time
 
 try:
     from backend.dev_store import DevStore, WriteError
@@ -68,9 +69,9 @@ class PilotStore(DevStore):
         if not config.workflow_review_valid():
             raise WriteError('The native workflow review is missing or expired. Pilot writes are paused.', 403)
 
-    def validate_source(self):
+    def validate_source(self, *, source_current=False):
         self.require_writes()
-        return super().validate_source()
+        return super().validate_source(source_current=source_current)
 
     @contextmanager
     def authorized_writes(self, guard):
@@ -216,6 +217,9 @@ class JobService:
         return {
             'mode': 'dev-write' if writable else 'dev-readonly',
             'projects': projects, 'designers': directory,
+            'sourceVersion': context.reader.version,
+            'departmentOptions': raw.get('departmentOptions', []),
+            'capabilities': self._capabilities(context),
             'taskTypes': raw.get('taskTypes', []),
             'taskTypeMultiple': raw.get('taskTypeMultiple', False),
             'priorities': raw.get('priorities', []), 'teamWorkload': counts,
@@ -237,22 +241,47 @@ class JobService:
             self._ensure_current(session_id, context)
             return result
 
+    def _capabilities(self, context):
+        return {
+            'schemaVersion': '1.0',
+            'requesterTrackingAvailable': bool(getattr(self.runtime,'intake',None)
+                and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled')),
+            'actor': context.principal.public_identity(),
+            'canCreate': self._writable(context),
+            'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),
+            'jobActionsAreScoped': True,
+            'features': {**{name: False for name in FEATURE_NAMES},
+                         **self.runtime.ai.flags()},
+            'limits': {'attachmentBytes': MAX_FILE_BYTES},
+            'constraints': {'deletion': False, 'sharedTokenFallback': False},
+            }
+
     def capabilities(self, session_id):
         with self.runtime.sheet_lock:
             context = self._fresh(session_id)
-            result = {
-                'schemaVersion': '1.0',
-                'requesterTrackingAvailable': bool(getattr(self.runtime,'intake',None)
-                    and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled')),
-                'actor': context.principal.public_identity(),
-                'canCreate': self._writable(context),
-                'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),
-                'jobActionsAreScoped': True,
-                'features': {**{name: False for name in FEATURE_NAMES},
-                             **self.runtime.ai.flags()},
-                'limits': {'attachmentBytes': MAX_FILE_BYTES},
-                'constraints': {'deletion': False, 'sharedTokenFallback': False},
-            }
+            result = self._capabilities(context)
+            self._ensure_current(session_id, context)
+            return result
+
+    def updates(self, session_id, version):
+        """A version check is a hint only; source writes always do a full fresh read."""
+        if not isinstance(version, str) or not re.fullmatch(r'\d{1,20}', version):
+            raise WriteError('Choose a valid workspace version.')
+        with self.runtime.sheet_lock:
+            context = self._resolve(session_id)
+            reader = context.reader
+            config = self.runtime.active_config()
+            current = reader._get_json(f'/sheets/{reader.sheet_id}/version', 'dev-version-check').get('version')
+            if type(current) is not int or current < 0:
+                raise GatewayError('Smartsheet returned an invalid workspace version.')
+            unchanged = (str(current) == version and current == reader.version
+                         and reader.copied_row_ids == config.copied_row_ids
+                         and time.monotonic() - reader._cache_time < 60)
+            if unchanged:
+                result = {'unchanged': True, 'sourceVersion': current}
+            else:
+                context = self._fresh(session_id)
+                result = self._workspace(context, context.reader._cache)
             self._ensure_current(session_id, context)
             return result
 
@@ -300,7 +329,7 @@ class JobService:
                 action = body.get('action') if isinstance(body, dict) else None
                 with reader.store.authorized_writes(
                         lambda: self._before_write(session_id, context, job_id, action)):
-                    result = reader.store.perform(key, body, job_id)
+                    result = reader.store.perform(key, body, job_id, source_current=True)
                 saved_job = result['jobId']
                 if job_id is None:
                     with self.runtime.db() as db:

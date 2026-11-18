@@ -72,3 +72,5 @@ See [architecture and access](docs/architecture.md), [scope and preservation](do
 [Selected copied-project preview](docs/copied-project-preview.md) adds read-only projects from the existing DEV copy alongside editable test records. A separate private row allowlist preserves the write and AI boundaries; copied projects use existing account visibility rules.
 
 [Onboarding and requester tracking](docs/onboarding-and-requester-tracking.md) adds once-per-account tutorials with fictional practice, manual replay through Help, and owner-only My Requests for new Microsoft submissions. Requester tracking stays disabled until the Microsoft integration is approved and configured. [Validation evidence](docs/onboarding-tracking-validation.md) separates isolated tests from the running staff pilot.
+
+[Searchable intake, prominent offers and workspace sync](docs/intake-and-workspace-sync.md) adds filtered work-type/department choices, direct offer review and active-tab updates with fewer native reads and protection for unsaved input.

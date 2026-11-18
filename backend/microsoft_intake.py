@@ -245,7 +245,7 @@ class IntakeService:
         actor = session.actor
         cfg = self.active()
         return {'name': actor.name, 'email': actor.email, 'department': actor.department,
-                'csrf': session.csrf, 'taskTypes': data['taskTypes'],
+                'csrf': session.csrf, 'departmentOptions': data.get('departmentOptions', []), 'taskTypes': data['taskTypes'],
                 'taskTypeMultiple': data['taskTypeMultiple'],
                 'canSubmit': bool(cfg.writes and cfg.workflow_review_valid()
                                   and self.reader.sheet.get('accessLevel') in WRITABLE_ACCESS)}

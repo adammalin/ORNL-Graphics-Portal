@@ -165,7 +165,12 @@ class ReportingDownloadTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.assets=Path(self.tmp.name)
         for source,target in [('DejaVuSans.ttf','Aptos.ttf'),('DejaVuSans-Bold.ttf','Aptos-Bold.ttf')]:
             self.assets.joinpath(target).write_bytes(Path(get_data_path(),'fonts/ttf',source).read_bytes())
-        prs=Presentation();prs.save(self.assets/'ornl-template.potx') # Fictional CI template; private official artwork is not committed.
+        prs=Presentation();title=prs.slide_layouts[0];title.name='Title | Standard'
+        for idx in [14,15,17]:
+            element=copy.deepcopy(title.placeholders[1]._element)
+            element.xpath('.//p:ph')[0].set('idx',str(idx));element.xpath('.//p:cNvPr')[0].set('id',str(100+idx))
+            title.shapes._spTree.insert_element_before(element,'p:extLst')
+        prs.save(self.assets/'ornl-template.potx') # Fictional CI template; private official artwork is not committed.
         self.patch=patch('backend.report_exports.ASSET_DIR',self.assets);self.patch.start()
     def tearDown(self):self.patch.stop();self.tmp.cleanup()
 
@@ -185,7 +190,7 @@ class ReportingDownloadTests(unittest.TestCase):
                     self.assertIn('Fictional Research',data.decode())
                 elif fmt=='pdf':
                     pdf=PdfReader(io.BytesIO(data));text='\n'.join(page.extract_text() for page in pdf.pages)
-                    self.assertIn('Fictional Research',text);self.assertIn('Source version 7',text);self.assertGreater(len(pdf.pages),5)
+                    self.assertIn('Fictional Research',text);self.assertIn('Source version 7',text);self.assertIn('Monthly activity',text);self.assertIn('Data coverage and definitions',text)
                 elif fmt=='docx':
                     doc=Document(io.BytesIO(data));text='\n'.join(p.text for p in doc.paragraphs)
                     self.assertIn('Fictional Research',text);self.assertGreater(len(doc.tables),5)
@@ -206,18 +211,40 @@ class ReportingDownloadTests(unittest.TestCase):
         r=sample_report();r['records'][0]['title']='Long fictional project title '*150
         r['types'][0]['label']='=HYPERLINK("https://example.org")'
         r['highlights'][0]['reporting']['impactStatement']='A long fictional impact statement with no measured claim. '*20
-        pdf,_,_=render_export(r,'pdf',['records','impact','quality'],'impact');self.assertGreater(len(PdfReader(io.BytesIO(pdf)).pages),2)
+        pdf,_,_=render_export(r,'pdf',['records','impact','quality'],'impact');self.assertIn('Project register',PdfReader(io.BytesIO(pdf)).pages[0].extract_text())
         pptx,_,_=render_export(r,'pptx',['types','impact','records','quality'],'impact')
         self.assertGreater(len(Presentation(io.BytesIO(pptx)).slides),5)
         reordered,_,_=render_export(r,'pdf',['monthly','summary','quality'],'operations')
         pages=PdfReader(io.BytesIO(reordered)).pages
-        self.assertIn('Monthly activity',pages[1].extract_text());self.assertIn('Executive summary',pages[2].extract_text())
+        self.assertIn('Monthly activity',pages[0].extract_text())
+        text='\n'.join(page.extract_text() for page in pages);self.assertLess(text.index('Monthly activity'),text.index('Executive summary'))
         with zipfile.ZipFile(io.BytesIO(pptx)) as package:
             for name in package.namelist():
                 if name.endswith('.xlsx'):
                     with zipfile.ZipFile(io.BytesIO(package.read(name))) as workbook:
                         for item in workbook.namelist():
                             if item.startswith('xl/worksheets/') and item.endswith('.xml'):self.assertNotIn(b'<f>',workbook.read(item))
+
+    def test_document_widths_native_cover_and_first_page_content(self):
+        from backend.report_exports import render_export,document_table
+        from docx import Document
+        from pptx import Presentation
+        from pypdf import PdfReader
+        r=sample_report()
+        for first in ['monthly','types','records','summary']:
+            data,_,_=render_export(r,'pdf',[first,'quality'],'operations')
+            self.assertIn({'monthly':'Monthly activity','types':'Types of work','records':'Project register','summary':'Executive summary'}[first],PdfReader(io.BytesIO(data)).pages[0].extract_text())
+        data,_,_=render_export(r,'docx',['monthly','records','quality'],'operations');doc=Document(io.BytesIO(data))
+        for table,key in zip(doc.tables,['monthly','records','quality']):
+            expected=document_table(r,key)[2]
+            self.assertEqual([round(c.width.pt) for c in table.columns],expected)
+            for row in table.rows:self.assertEqual([round(c.width.pt) for c in row.cells],expected)
+        self.assertNotIn('w:type="page"',doc._element.xml)
+        data,_,_=render_export(r,'pptx',['summary','quality'],'operations');cover=Presentation(io.BytesIO(data)).slides[0]
+        self.assertEqual(cover.slide_layout.name,'Title | Standard')
+        self.assertTrue(all(shape.is_placeholder for shape in cover.shapes))
+        self.assertEqual(cover.placeholders[15].text,'Operations review')
+        self.assertIn('Management Report',cover.shapes.title.text)
 
     def test_csv_formula_escape_and_missing_private_assets_fail_closed(self):
         from backend.report_exports import csv_export,render_export

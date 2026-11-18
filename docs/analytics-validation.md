@@ -4,7 +4,7 @@ This is DEV validation, not approval for production or a penetration-test certif
 
 ## Verified
 
-- 136 Python regression tests and 15 JavaScript tests pass locally, including 12 reporting tests.
+- 137 Python regression tests and 15 JavaScript tests pass locally, including 13 reporting tests.
 - Reporting arithmetic: received/completed cohort deduplication, zero-count months, partial months, multiple work types, explicit cancellation/archive rules, unknown/reversed dates and confirmed-deadline denominators.
 - Access: coordinator-only API, designer denial in the UI, Origin/CSRF, owner-scoped snapshots, expiry, source access revocation, source/metadata conflicts and revalidation after rendering. Crafted invalid export requests fail closed.
 - Source protection: reporting profile saves use private sidecar tables, preserve all synthetic API source rows, and perform only native GETs. Copied rows reject annotation. Version checks reject stale saves. No native reporting-field/schema/workflow changes.
@@ -22,3 +22,7 @@ Private generated exports, downloaded live reports, screenshots, render contact 
 The report guide documents scope, calculations, export/register limits, user-owned snapshot lifetime, private assets, migration and rollback. Tests do not enable Microsoft requester intake, AI, email notifications, SCOUT, Dropbox or production sharing. The native Smartsheet dashboards/workflows were not modified. Cross-account authorization was tested with fictional API fixtures, not by impersonating the other invited staff.
 
 PowerPoint and Word packages were reopened programmatically and rendered in LibreOffice. Microsoft Office desktop-specific behavior and recipient font availability remain a demo acceptance check. No claims are made about unavailable native timeline/history, actual hours, full-team utilization, or measured organizational impact.
+
+## Export layout revision
+
+Removed automatic section page breaks from PDF/Word so the first selected section starts on page one, including when sections are reordered. Matched widths across table grids and actual Word cells, right-aligned numeric values, added repeating table headers and page numbers, and kept short summary/coverage tables together. Charts use proportional heights. PowerPoint now uses the exact `Title | Standard` layout and its native title/date/report placeholders without added cover text boxes. Tests check first-page content, section order, actual Word cell widths and native cover layout. Executive and reordered Operations outputs were regenerated from the private DEV snapshot and all rendered pages inspected.

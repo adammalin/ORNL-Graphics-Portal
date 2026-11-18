@@ -95,7 +95,8 @@ def chart_png(report,key):
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.font_manager import FontProperties
     font=FontProperties(fname=str(ASSET_DIR/'Aptos.ttf'),size=10)
-    fig=Figure(figsize=(7,3.2),dpi=180,facecolor='#'+WHITE);FigureCanvasAgg(fig);ax=fig.subplots()
+    height=2.35 if key=='monthly' else max(1.5,min(3.5,.34*len(report[key][:8])+.7))
+    fig=Figure(figsize=(7,height),dpi=180,facecolor='#'+WHITE);FigureCanvasAgg(fig);ax=fig.subplots()
     ax.spines[['top','right']].set_visible(False)
     if key=='monthly':
         rows=report[key];xs=list(range(len(rows)))
@@ -106,58 +107,95 @@ def chart_png(report,key):
         rows=report[key][:8]
         if not rows:return None
         ax.barh(list(range(len(rows))),[r['value'] for r in rows],color='#'+GREEN)
-        ax.set_yticks(list(range(len(rows))),[textwrap.fill(plain(r['label']),32) for r in rows]);ax.invert_yaxis()
+        ax.set_yticks(list(range(len(rows))),[textwrap.fill(compact(r['label'],55),28) for r in rows]);ax.invert_yaxis()
     from matplotlib.ticker import MaxNLocator
     ax.xaxis.set_major_locator(MaxNLocator(integer=True)) if key!='monthly' else ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     for label in list(ax.get_xticklabels())+list(ax.get_yticklabels()):label.set_fontproperties(font)
     ax.tick_params(colors='#'+INK);fig.tight_layout(pad=1.1);out=io.BytesIO();fig.savefig(out,format='png',dpi=180);return out.getvalue()
 
 
+def document_table(report,key):
+    """Readable document labels and fixed widths in points, shared by PDF/Word."""
+    header,rows=section_table(report,key)
+    widths={'summary':[390,114],'quality':[390,114],'monthly':[252,126,126],
+            'types':[400,104],'stages':[400,104],'directorates':[400,104],
+            'designers':[216,72,72,72,72],'records':[64,248,82,110]}[key]
+    if key=='designers':header=['Designer','Completed','Active','Offers','Est. hours']
+    if key=='records':rows=[[compact(value,500) if j==1 else value for j,value in enumerate(row)] for row in rows]
+    return header,rows,widths
+
+
+def report_period(report):
+    from datetime import date
+    dates=[date.fromisoformat(report['filters'][key]) for key in ['start','end']]
+    return ' – '.join(f'{d:%b} {d.day}, {d.year}' for d in dates)
+
+
+def report_layout_name(layout):
+    return {'executive':'Executive overview','operations':'Operations review','impact':'Impact briefing'}[layout]
+
+
 def pdf_export(report,sections,layout):
-    from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,Image,PageBreak,KeepTogether
+    from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle,Image,KeepTogether
     from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
     from reportlab.lib import colors
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.lib.pagesizes import letter
-    require_assets();pdfmetrics.registerFont(TTFont('ReportAptos',str(ASSET_DIR/'Aptos.ttf')));pdfmetrics.registerFont(TTFont('ReportAptosBold',str(ASSET_DIR/'Aptos-Bold.ttf')))
+    require_assets()
+    pdfmetrics.registerFont(TTFont('ReportAptos',str(ASSET_DIR/'Aptos.ttf')))
+    pdfmetrics.registerFont(TTFont('ReportAptosBold',str(ASSET_DIR/'Aptos-Bold.ttf')))
     styles=getSampleStyleSheet()
     for st in styles.byName.values():st.fontName='ReportAptos';st.textColor=colors.HexColor('#'+INK)
-    styles['Title'].fontName='ReportAptosBold';styles['Title'].fontSize=25;styles['Title'].leading=29;styles['Title'].alignment=0
-    styles['Heading1'].fontName='ReportAptosBold';styles['Heading1'].fontSize=18;styles['Heading1'].leading=22;styles['Heading1'].textColor=colors.HexColor('#'+GREEN)
-    styles['BodyText'].fontSize=10.5;styles['BodyText'].leading=14
-    cell=ParagraphStyle('Cell',fontName='ReportAptos',fontSize=9,leading=12,textColor=colors.HexColor('#'+INK))
-    p=lambda text,style=styles['BodyText']:Paragraph(escape(plain(text)).replace('\n','<br/>'),style)
-    content=[p(report['title'],styles['Title']),p(layout.replace('-',' ').title()+' report'),p(report['filters']['start']+' through '+report['filters']['end']),Spacer(1,12),p(report['notes'][0]),p(filter_text(report)),p('Generated '+report['generatedAt']+' | Source version '+str(report['sourceVersion']))]
-    for index,key in enumerate(sections):
-        if index==0 and key=='summary':content.append(Spacer(1,22))
-        else:content.append(PageBreak())
-        content.append(p(SECTIONS[key],styles['Heading1']))
-        if key=='records':content.append(p('Long job titles are shortened in this register; the job CSV retains complete values.'))
+    styles['Title'].fontName='ReportAptosBold';styles['Title'].fontSize=22;styles['Title'].leading=26;styles['Title'].alignment=0;styles['Title'].spaceAfter=6
+    for name,size in [('Heading1',16),('Heading2',11)]:
+        st=styles[name];st.fontName='ReportAptosBold';st.fontSize=size;st.leading=size+4;st.textColor=colors.HexColor('#'+GREEN);st.spaceBefore=14;st.spaceAfter=7;st.keepWithNext=True
+    styles['BodyText'].fontSize=10;styles['BodyText'].leading=13;styles['BodyText'].spaceAfter=6
+    meta=ParagraphStyle('Metadata',parent=styles['BodyText'],fontSize=8.5,leading=11,textColor=colors.HexColor('#'+NAVY),spaceAfter=4)
+    cell=ParagraphStyle('Cell',fontName='ReportAptos',fontSize=9.5,leading=12,textColor=colors.HexColor('#'+INK))
+    number=ParagraphStyle('NumericCell',parent=cell,alignment=2)
+    head=ParagraphStyle('TableHeader',parent=cell,fontName='ReportAptosBold',textColor=colors.HexColor('#'+NAVY))
+    p=lambda value,style=styles['BodyText']:Paragraph(escape(plain(value)).replace('\n','<br/>'),style)
+    content=[p(report['title'],styles['Title']),p(report_layout_name(layout)+' | '+report_period(report),meta),
+             p(report['notes'][0],meta),p(filter_text(report),meta),
+             p('Generated '+report['generatedAt']+' | Source version '+str(report['sourceVersion']),meta)]
+    for key in sections:
+        heading=p(SECTIONS[key],styles['Heading1'])
         if key in ('monthly','types','stages','directorates','designers'):
             png=chart_png(report,key)
-            if png:content.extend([Image(io.BytesIO(png),width=490,height=224),Spacer(1,12)])
-            if key!='monthly' and len(report[key])>8:content.append(p('Chart shows the first 8 categories. The table includes all categories.'))
+            if png:
+                image=Image(io.BytesIO(png));image.drawHeight=504*image.imageHeight/image.imageWidth;image.drawWidth=504
+                content.append(KeepTogether([heading,image,Spacer(1,5)]))
+            else:content.append(heading)
+            if key!='monthly' and (len(report[key])>8 or any(len(r['label'])>55 for r in report[key][:8])):content.append(p('Chart shows up to 8 categories; complete labels and counts appear in the table.',meta))
+        else:content.append(heading)
         if key=='impact':
-            highlights=report['highlights'];content.append(p(f'{len(highlights)} high or strategic jobs in this period. Showing up to 8 spotlights; use the job CSV for all records.'))
-            for r in highlights[:8]:
-                m=r['reporting'];content.extend([Spacer(1,12),p(r['id']+' '+r['title'],styles['Heading2'])])
-                for label,field in [('Classification','impactLevel'),('Justification','impactJustification'),('Impact statement','impactStatement'),('Intended outcome','intendedOutcome'),('Observed outcome','observedOutcome'),('Evidence','evidenceUrl')]:
-                    content.append(p(label+': '+(m.get(field) or 'Not recorded')))
-            if not highlights:content.append(p('No coordinator-classified high or strategic impact jobs are recorded for this period. This is not evidence of no impact.'))
-        else:
-            header,rows=section_table(report,key)
-            if key=='records' and len(rows)>200:content.append(p(f'Showing 200 of {len(rows)} matching projects. Download job CSV for all records.'));rows=rows[:200]
-            if not rows:content.append(p('No matching data.'))
-            else:
-                table=Table([[p(v,cell) for v in header]]+[[p(shown(v),cell) for v in ([compact(v,500) for v in row] if key=='records' else row)] for row in rows],repeatRows=1,hAlign='LEFT',colWidths=([345,145] if len(header)==2 else [490/len(header)]*len(header)))
-                table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#'+GRAY)),('GRID',(0,0),(-1,-1),.4,colors.HexColor('#'+GRAY)),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),8),('RIGHTPADDING',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]));content.append(table)
+            content.append(p(f'{len(report["highlights"])} high or strategic jobs. Up to 8 spotlights are included; use the job CSV for all records.'))
+            for r in report['highlights'][:8]:
+                content.append(p(r['id']+' '+compact(r['title'],500),styles['Heading2']))
+                for label,field in [('Classification','impactLevel'),('Justification','impactJustification'),('Impact statement','impactStatement'),('Intended outcome','intendedOutcome'),('Observed outcome','observedOutcome'),('Evidence','evidenceUrl')]:content.append(p(label+': '+(r['reporting'].get(field) or 'Not recorded')))
+            if not report['highlights']:content.append(p('No coordinator-classified high or strategic impact jobs are recorded for this period. This is not evidence of no impact.'))
+            continue
+        header,rows,widths=document_table(report,key)
+        if key=='records':
+            content.append(p('Long job titles are shortened; CSV retains complete values.'+(f' Showing 200 of {len(rows)} projects.' if len(rows)>200 else ''),meta));rows=rows[:200]
+        if rows:
+            table=Table([[p(v,head) for v in header]]+[[p(shown(v),number if j and key!='records' else cell) for j,v in enumerate(row)] for row in rows],repeatRows=1,hAlign='LEFT',colWidths=widths)
+            commands=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#'+GRAY)),('LINEBELOW',(0,0),(-1,0),.7,colors.HexColor('#'+NAVY)),
+                ('LINEBELOW',(0,1),(-1,-1),.35,colors.HexColor('#'+GRAY)),('VALIGN',(0,0),(-1,-1),'TOP'),
+                ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]
+            if key!='records':commands.append(('ALIGN',(1,1),(-1,-1),'RIGHT'))
+            table.setStyle(TableStyle(commands))
+            if key in ('summary','quality') and content[-1] is heading:content.pop();content.append(KeepTogether([heading,table]))
+            else:content.append(table)
+        else:content.append(p('No matching data.'))
+        if key=='designers':content.append(p('Completed: verified completions in the period. Active, offers and estimates: current work across all dates within the other filters. Estimates are not actual effort.',meta))
         if key=='quality':
-            for note in report['notes']:content.extend([Spacer(1,8),p(note)])
+            for note in report['notes']:content.append(p(note,meta))
     out=io.BytesIO()
     def footer(canvas,doc):
         canvas.setFont('ReportAptos',8);canvas.setFillColor(colors.HexColor('#'+NAVY));canvas.drawString(54,28,'Creative Services | DEV sample | '+report['filters']['start']+' to '+report['filters']['end']);canvas.drawRightString(558,28,str(doc.page))
-    SimpleDocTemplate(out,pagesize=letter,leftMargin=54,rightMargin=54,topMargin=45,bottomMargin=48,title=report['title']).build(content,onFirstPage=footer,onLaterPages=footer)
+    SimpleDocTemplate(out,pagesize=letter,leftMargin=54,rightMargin=54,topMargin=40,bottomMargin=48,title=report['title']).build(content,onFirstPage=footer,onLaterPages=footer)
     return out.getvalue()
 
 
@@ -166,41 +204,71 @@ def docx_export(report,sections,layout):
     from docx.shared import Inches,Pt,RGBColor
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    require_assets();doc=Document();sec=doc.sections[0];sec.page_width=Inches(8.5);sec.page_height=Inches(11);sec.top_margin=sec.bottom_margin=Inches(.7);sec.left_margin=sec.right_margin=Inches(.75)
-    for name in ['Normal','Title','Heading 1','Heading 2']:
-        doc.styles[name].font.name='Aptos';doc.styles[name].font.color.rgb=RGBColor.from_string(INK if name in ('Normal','Title') else GREEN)
-    doc.styles['Normal'].font.size=Pt(11);doc.styles['Normal'].paragraph_format.space_after=Pt(8)
-    doc.add_paragraph(report['title'],'Title');doc.add_paragraph(layout.title()+' report')
-    doc.add_paragraph(report['filters']['start']+' through '+report['filters']['end']);doc.add_paragraph(report['notes'][0]);doc.add_paragraph(filter_text(report));doc.add_paragraph('Generated '+report['generatedAt']+' | Source version '+str(report['sourceVersion']))
-    sec.header.paragraphs[0].text='Creative Services'
-    sec.footer.paragraphs[0].text='ORNL | DEV sample | '+report['filters']['start']+' to '+report['filters']['end']
-    for index,key in enumerate(sections):
-        if index or key!='summary':doc.add_page_break()
+    from docx.enum.table import WD_TABLE_ALIGNMENT,WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.style import WD_STYLE_TYPE
+    require_assets();doc=Document();sec=doc.sections[0]
+    sec.page_width=Inches(8.5);sec.page_height=Inches(11);sec.top_margin=sec.bottom_margin=Inches(.65);sec.left_margin=sec.right_margin=Inches(.75)
+    sec.header_distance=sec.footer_distance=Inches(.25)
+    for name,size in [('Normal',10),('Title',22),('Heading 1',16),('Heading 2',11)]:
+        st=doc.styles[name];st.font.name='Aptos';st.font.size=Pt(size);st.font.color.rgb=RGBColor.from_string(GREEN if name.startswith('Heading') else INK)
+        st.paragraph_format.space_after=Pt(6);st.paragraph_format.line_spacing=1.1
+        if name.startswith('Heading'):st.font.bold=True;st.paragraph_format.space_before=Pt(14);st.paragraph_format.keep_with_next=True
+    doc.styles['Title'].font.bold=True
+    border=doc.styles['Title'].element.find(qn('w:pPr')).find(qn('w:pBdr'))
+    if border is not None:border.getparent().remove(border)
+    meta=doc.styles.add_style('Report metadata',WD_STYLE_TYPE.PARAGRAPH);meta.base_style=doc.styles['Normal'];meta.font.size=Pt(8.5);meta.font.color.rgb=RGBColor.from_string(NAVY);meta.paragraph_format.space_after=Pt(4)
+    doc.add_paragraph(report['title'],'Title');doc.add_paragraph(report_layout_name(layout)+' | '+report_period(report),'Report metadata')
+    for value in [report['notes'][0],filter_text(report),'Generated '+report['generatedAt']+' | Source version '+str(report['sourceVersion'])]:doc.add_paragraph(value,'Report metadata')
+    hp=sec.header.paragraphs[0];hp.text='Creative Services | Management reporting';hp.style='Report metadata'
+    fp=sec.footer.paragraphs[0];fp.style='Report metadata';fp.text='ORNL | DEV sample | Page '
+    for instruction in ['PAGE','NUMPAGES']:
+        if instruction=='NUMPAGES':fp.add_run(' of ')
+        field=OxmlElement('w:fldSimple');field.set(qn('w:instr'),instruction);fp._p.append(field)
+    for key in sections:
         doc.add_heading(SECTIONS[key],1)
         if key in ('monthly','types','stages','directorates','designers'):
             png=chart_png(report,key)
-            if png:doc.add_picture(io.BytesIO(png),width=Inches(6.8))
-            if key!='monthly' and len(report[key])>8:doc.add_paragraph('Chart shows the first 8 categories. The table includes all categories.')
+            if png:
+                para=doc.add_paragraph();para.paragraph_format.space_after=Pt(5);para.add_run().add_picture(io.BytesIO(png),width=Inches(7))
+            if key!='monthly' and (len(report[key])>8 or any(len(r['label'])>55 for r in report[key][:8])):doc.add_paragraph('Chart shows up to 8 categories; complete labels and counts appear in the table.','Report metadata')
         if key=='impact':
-            doc.add_paragraph(f'{len(report["highlights"])} high or strategic jobs. Showing up to 8 spotlights; the job CSV includes all records.')
+            doc.add_paragraph(f'{len(report["highlights"])} high or strategic jobs. Up to 8 spotlights are included; use job CSV for all records.')
             for r in report['highlights'][:8]:
-                doc.add_heading(plain(r['id']+' '+r['title']),2)
-                for label,k in [('Classification','impactLevel'),('Justification','impactJustification'),('Impact statement','impactStatement'),('Intended outcome','intendedOutcome'),('Observed outcome','observedOutcome'),('Evidence','evidenceUrl')]:doc.add_paragraph(label+': '+plain(r['reporting'].get(k) or 'Not recorded'))
+                doc.add_heading(plain(r['id']+' '+compact(r['title'],500)),2)
+                for label,field in [('Classification','impactLevel'),('Justification','impactJustification'),('Impact statement','impactStatement'),('Intended outcome','intendedOutcome'),('Observed outcome','observedOutcome'),('Evidence','evidenceUrl')]:doc.add_paragraph(label+': '+plain(r['reporting'].get(field) or 'Not recorded'))
             if not report['highlights']:doc.add_paragraph('No high or strategic impact classifications are recorded for this period. This is not evidence of no impact.')
-        else:
-            header,rows=section_table(report,key)
-            if key=='records' and len(rows)>200:doc.add_paragraph(f'Showing 200 of {len(rows)} matching projects. Use job CSV for all records.');rows=rows[:200]
-            table=doc.add_table(rows=1,cols=len(header));table.style='Table Grid'
-            if len(header)==2:
-                table.autofit=False;table.columns[0].width=Inches(4.9);table.columns[1].width=Inches(2.1)
-            for cell,text in zip(table.rows[0].cells,header):
-                cell.text=plain(text);shade=OxmlElement('w:shd');shade.set(qn('w:fill'),GRAY);cell._tc.get_or_add_tcPr().append(shade)
-            repeat=OxmlElement('w:tblHeader');table.rows[0]._tr.get_or_add_trPr().append(repeat)
-            for row in rows:
-                for cell,value in zip(table.add_row().cells,row):cell.text=plain(shown(value))
-            if not rows:doc.add_paragraph('No matching data.')
-            if key=='quality':
-                for note in report['notes']:doc.add_paragraph(note)
+            continue
+        header,rows,widths=document_table(report,key)
+        if key=='records':
+            doc.add_paragraph('Long job titles are shortened; CSV retains complete values.'+(f' Showing 200 of {len(rows)} projects.' if len(rows)>200 else ''),'Report metadata');rows=rows[:200]
+        if not rows:doc.add_paragraph('No matching data.');continue
+        table=doc.add_table(rows=1,cols=len(header));table.autofit=False;table.alignment=WD_TABLE_ALIGNMENT.LEFT
+        pr=table._tbl.tblPr
+        width=pr.find(qn('w:tblW'));width.set(qn('w:type'),'dxa');width.set(qn('w:w'),str(504*20))
+        borders=OxmlElement('w:tblBorders')
+        for side in ['top','left','bottom','right','insideH','insideV']:
+            edge=OxmlElement('w:'+side);edge.set(qn('w:val'),'single' if side in ('bottom','insideH') else 'nil');edge.set(qn('w:sz'),'4');edge.set(qn('w:color'),GRAY);borders.append(edge)
+        pr.append(borders)
+        margins=OxmlElement('w:tblCellMar')
+        for side in ['top','left','bottom','right']:
+            item=OxmlElement('w:'+side);item.set(qn('w:type'),'dxa');item.set(qn('w:w'),'100' if side in ('top','bottom') else '120');margins.append(item)
+        pr.append(margins)
+        for column,width in zip(table.columns,widths):column.width=Pt(width)
+        for i,values in enumerate([header]+rows):
+            row=table.rows[0] if i==0 else table.add_row();rowpr=row._tr.get_or_add_trPr();rowpr.append(OxmlElement('w:cantSplit'))
+            if i==0:rowpr.append(OxmlElement('w:tblHeader'))
+            for j,(cell,value,width) in enumerate(zip(row.cells,values,widths)):
+                cell.width=Pt(width);cell.vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.TOP;cell.text=plain(shown(value))
+                if i==0:
+                    shade=OxmlElement('w:shd');shade.set(qn('w:fill'),GRAY);cell._tc.get_or_add_tcPr().append(shade)
+                for para in cell.paragraphs:
+                    para.paragraph_format.space_before=Pt(0);para.paragraph_format.space_after=Pt(0);para.paragraph_format.line_spacing=1.05;para.paragraph_format.keep_with_next=(i<len(rows) if key in ('summary','quality') or (key!='records' and len(rows)<=12) else i==0)
+                    if i and j and key!='records':para.alignment=WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in para.runs:run.font.name='Aptos';run.font.size=Pt(9.5);run.font.bold=i==0;run.font.color.rgb=RGBColor.from_string(NAVY if i==0 else INK)
+        if key=='designers':doc.add_paragraph('Completed: verified completions in the period. Active, offers and estimates: current work across all dates within the other filters. Estimates are not actual effort.','Report metadata')
+        if key=='quality':
+            for note in report['notes']:doc.add_paragraph(note,'Report metadata')
     out=io.BytesIO();doc.save(out);return out.getvalue()
 
 
@@ -237,15 +305,22 @@ def pptx_export(report,sections,layout):
         text(slide,'DEV sample | '+report['filters']['start']+' to '+report['filters']['end'],.5,6.65,12.2,.35,14,color=NAVY)
         slide.notes_slide.notes_text_frame.text='Source snapshot generated '+report['generatedAt']+'; source version '+str(report['sourceVersion'])+'\nFilters: '+json.dumps(report['filters'],sort_keys=True)+'\n'+'\n'.join(report['notes'])
         return slide
-    cover=prs.slides.add_slide(prs.slide_layouts[4]);cover.shapes.title.text=report['title']
+    title_layout=next((item for item in prs.slide_layouts if item.name=='Title | Standard'),None)
+    if title_layout is None:raise WriteError('Install the approved ORNL template with its Title | Standard layout.',503)
+    cover=prs.slides.add_slide(title_layout)
+    fields={0:'Creative Services\nManagement Report',14:report_period(report),1:'MANAGEMENT REPORTING',
+            15:report_layout_name(layout),17:'DEV sample · Generated '+report['generatedAt'][:10]}
+    if set(fields)-{shape.placeholder_format.idx for shape in cover.placeholders}:
+        raise WriteError('The approved title layout is missing its native report placeholders.',503)
     for shape in cover.placeholders:
-        if shape.placeholder_format.idx==0:
-            for p in shape.text_frame.paragraphs:p.font.name='Aptos';p.font.size=Pt(32);p.font.color.rgb=RGBColor.from_string(WHITE)
-        elif shape.has_text_frame:
-            shape.text=''
-    text(cover,layout.title()+' report',1.0,3.8,11.2,.5,24,color=WHITE)
-    text(cover,report['filters']['start']+' through '+report['filters']['end'],1.0,4.45,11.2,.5,20,color=WHITE)
-    text(cover,'DEV sample | '+report['generatedAt'][:10],1.0,5.1,11.2,.45,16,color=WHITE)
+        idx=shape.placeholder_format.idx
+        if shape.has_text_frame:
+            shape.text=fields.get(idx,'');tf=shape.text_frame;tf.word_wrap=True
+            tf.margin_top=tf.margin_bottom=tf.margin_left=tf.margin_right=0
+            for para in tf.paragraphs:
+                para.space_before=Pt(0);para.space_after=Pt(0);para.line_spacing=1.05
+                para.font.name='Aptos';para.font.size=Pt({0:32,14:12,1:12,15:24,17:12}.get(idx,12));para.font.bold=idx in (0,1)
+    cover.notes_slide.notes_text_frame.text=report['title']+'\n'+report['notes'][0]+'\nGenerated '+report['generatedAt']+' | Source version '+str(report['sourceVersion'])
     scope=page('Report scope and filters','Generated '+report['generatedAt']+' | Source version '+str(report['sourceVersion']))
     text(scope,filter_text(report)+'\n\n'+report['notes'][0],.7,2.1,11.8,4.2,22)
     for key in sections:

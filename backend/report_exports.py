@@ -252,7 +252,7 @@ def docx_export(report,sections,layout):
         pr.append(borders)
         margins=OxmlElement('w:tblCellMar')
         for side in ['top','left','bottom','right']:
-            item=OxmlElement('w:'+side);item.set(qn('w:type'),'dxa');item.set(qn('w:w'),'100' if side in ('top','bottom') else '120');margins.append(item)
+            item=OxmlElement('w:'+side);item.set(qn('w:type'),'dxa');item.set(qn('w:w'),'80' if side in ('top','bottom') else '120');margins.append(item)
         pr.append(margins)
         for column,width in zip(table.columns,widths):column.width=Pt(width)
         for i,values in enumerate([header]+rows):

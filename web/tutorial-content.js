@@ -51,6 +51,7 @@ export const TUTORIALS={
       'A coordinator can offer work, but cannot record acceptance on your behalf.'
     ],'offers'),details,references,
     lesson('editing','Update project information','Use Edit job when your account has permission to make changes.',[
+      'When creating your own staff request, optionally choose Assign to me and accept to put the saved job directly in My work.',
       'Keep the title, project details, deliverables, dates, estimate and priority useful to the team.',
       'Preserve original request facts and distinguish requested dates from confirmed dates.',
       'Save only intentional changes, then check the confirmed result.',
@@ -70,6 +71,7 @@ export const TUTORIALS={
     ],'sharing'),recovery,find,finish]},
   coordinator:{label:'Coordinator / admin',description:'Learn intake review, routing, acceptance, workload and oversight.',lessons:[
     lesson('intake','Review incoming requests','New requests arrive in the New lane for review.',[
+      'Staff creating their own work can select Assign to me and accept. That job starts Accepted in their My work view; unchecked requests stay New.',
       'Open the request and read the customer’s purpose, intended audience, deliverables and requested date.',
       'Read additional notes and reference files before deciding that information is missing.',
       'Separate essential follow-up questions from helpful but optional details.',

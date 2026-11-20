@@ -204,10 +204,15 @@ class DevStore:
                 db.execute('INSERT OR IGNORE INTO rows VALUES (?,?)', (self.reader.sheet_id, str(row_id)))
             db.execute('UPDATE operations SET state=?,result=? WHERE sheet=? AND key=?', ('done', json.dumps(result), self.reader.sheet_id, key))
 
-    def perform(self, key, body, job_id=None, *, source_current=False):
+    def perform(self, key, body, job_id=None, *, source_current=False, self_assign_to=None):
         if not isinstance(body, dict):
             raise WriteError('Invalid save request.')
-        fingerprint = hashlib.sha256(json.dumps([job_id, body], sort_keys=True).encode()).hexdigest()
+        if self_assign_to is not None and job_id is not None:
+            raise WriteError('Self-assignment is only available when creating a job.')
+        # Preserve legacy receipts for ordinary intake. Include the server-verified
+        # assignee in new receipts so a changed checkbox cannot replay other intent.
+        intent = [job_id,body] + ([{'selfAssignTo':self_assign_to}] if self_assign_to else [])
+        fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
         with self.reader._lock:
             # Resolve duplicate submissions before checking a now-stale revision.
             with self.db() as db:
@@ -245,6 +250,9 @@ class DevStore:
                 fields['priority'] = 'Normal'
                 values = self.clean_fields(fields, columns)
                 values.update({'DEV Test Record': True, 'Project Stage': 'New'})
+                if self_assign_to:
+                    values.update({'Requested Designer':self_assign_to,
+                                   'Designer Response':YES,'Project Stage':'Accepted'})
                 payload = [{'toBottom': True, 'cells': self.cells(columns, values)}]
                 self.begin(key, fingerprint)
                 response = self._write('POST', f'/sheets/{self.reader.sheet_id}/rows', payload, 'new-dev-request')

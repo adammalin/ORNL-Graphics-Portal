@@ -101,3 +101,9 @@ Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. St
 - [Automation API limits](https://developers.smartsheet.com/api/smartsheet/openapi/automationrules)
 - [Microsoft Dev Tunnels access controls](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/security)
 
+
+## Self-assignment during staff intake
+
+Signed-in staff can optionally select **Assign to me and accept** when creating a DEV request. It is unchecked by default. The backend resolves the assignee from the authenticated Smartsheet identity and creates the row with Requested Designer, an affirmative Designer Response and Accepted stage in one native POST. The existing Assigned Designer formula is preserved. The saved job appears immediately in My work, workload counts and the Accepted lane; the success page links to My work. Ordinary unchecked requests remain New and unassigned.
+
+The staff create contract accepts optional top-level `assignToMe: true|false`; it accepts no caller-supplied assignee. The existing write gates, source/schema/formula checks, current native access, CSRF, row ownership and idempotency rules apply. Changing the checkbox on a retry using the same key returns a conflict rather than creating another row. This does not enable self-assignment of existing jobs or add an option to anonymous/customer intake. No native schema or workflow definitions change.

@@ -45,6 +45,8 @@ class PilotStore(DevStore):
     def __init__(self, reader, path, runtime, actor):
         self.runtime = runtime
         self.identities = frozenset(actor.identities)
+        self._self_contact = {'id':actor.email,'name':actor.name,
+                              'initials':''.join(p[:1] for p in actor.name.split()[:2]),'capacity':None}
         self._write_guard = None
         self._admin_rows = frozenset()
         super().__init__(reader, path)
@@ -53,6 +55,7 @@ class PilotStore(DevStore):
         data = super().metadata()
         invites = self.runtime.active_config().invites
         directory = {p['id']: p for p in data['designers']}
+        directory[self._self_contact['id']] = self._self_contact
         for email in invites:
             directory.setdefault(email, {
                 'id': email, 'name': email, 'initials': email[:2].upper(),
@@ -323,6 +326,7 @@ class JobService:
             if reader.sheet.get('accessLevel') not in WRITABLE_ACCESS:
                 raise WriteError('Your Smartsheet account cannot edit this sheet.', 403)
             key = self._key(principal, key)
+            self_assign_to = None
             if job_id:
                 project = self._project(context, job_id)
                 if project.get('readOnly') and not principal.is_admin:
@@ -343,9 +347,14 @@ class JobService:
                     if action == 'offer' and body.get('designer') not in self.runtime.active_config().invites:
                         raise WriteError('Offer jobs only to invited pilot users.', 403)
             else:
-                if not isinstance(body, dict) or not isinstance(body.get('fields'), dict):
+                if (not isinstance(body, dict) or set(body)-{'fields','assignToMe'}
+                        or not isinstance(body.get('fields'), dict)
+                        or type(body.get('assignToMe',False)) is not bool):
                     raise WriteError('Invalid intake fields.')
-                body = {**body, 'fields': {**body['fields'],
+                # Acceptance can only be recorded for the authenticated creator,
+                # never for a caller-supplied designer or an existing job.
+                self_assign_to = principal.email if body.get('assignToMe',False) else None
+                body = {'fields': {**body['fields'],
                         'email': principal.email, 'requestor': principal.name}}
             try:
                 # Do not use an authorization snapshot after queued work expires.
@@ -353,7 +362,8 @@ class JobService:
                 with reader.store.authorized_writes(
                         lambda: self._before_write(session_id, context, job_id, action),
                         admin_rows={project['_rowId']} if job_id and principal.is_admin else ()):
-                    result = reader.store.perform(key, body, job_id, source_current=True)
+                    result = reader.store.perform(key, body, job_id, source_current=True,
+                                                  self_assign_to=self_assign_to)
                 saved_job = result['jobId']
                 if job_id is None:
                     saved=next((p for p in result['projects'] if p['id']==saved_job),None)
@@ -364,7 +374,7 @@ class JobService:
                                    (reader.sheet_id, saved_job, principal.user_id))
                         db.execute('INSERT OR IGNORE INTO job_ownership VALUES (?,?,?,?,?)',
                             (reader.sheet_id,saved['_rowId'],saved_job,principal.user_id,datetime.now(timezone.utc).isoformat()))
-                self.runtime.audit(principal, body.get('action', 'create'), saved_job, 'success')
+                self.runtime.audit(principal, 'create-self-assigned' if self_assign_to else body.get('action', 'create'), saved_job, 'success')
                 context = self._resolve(session_id)
                 return {**self._workspace(context, result), 'jobId': saved_job}
             except (WriteError, GatewayError):

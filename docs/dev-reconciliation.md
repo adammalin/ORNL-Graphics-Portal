@@ -2,7 +2,7 @@
 
 This host-only maintenance tool applies a separately reviewed export comparison to the pinned DEV sheet. It is disabled during normal startup. It adds no HTTP or agent endpoint and never exports an OAuth token. Source data, backups, plans and receipts belong in ignored private storage, never this public repository.
 
-The operator must first compare saved native exports and obtain approval for the exact conflicting values, proposed blank fills, missing jobs and comment history. The live sheet remains GET-only. A source job number that already belongs to a DEV test or placeholder is imported as a new row with a new native DEV number. Its source number and row link are retained in Additional Details. Imported comments preserve original author, date and request number in their text; native creation metadata identifies the importing account.
+The operator must first compare saved native exports and obtain approval for the exact conflicting values, proposed blank fills, missing jobs and comment history. The live sheet remains GET-only. A source job number that already belongs to a DEV test or placeholder is imported as a new row with a new native DEV number. Its source number and row link are retained in Additional Details. Imported comments preserve original author, date and request number in their text; native creation metadata identifies the importing account. Native comments already present on the mapped DEV job with identical text, author and date are preserved without duplication, even if the export comparison missed them. Set `expectedExistingComments` to their verified count and reduce the planned new-comment count accordingly.
 
 ## Execution
 

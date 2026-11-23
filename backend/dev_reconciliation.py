@@ -9,6 +9,7 @@ import re
 import sqlite3
 import threading
 import time
+import traceback
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request
@@ -24,6 +25,7 @@ def save_json(path,value):
     tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2,ensure_ascii=False));tmp.chmod(0o600);tmp.replace(path)
 def cell_value(cell):
     obj=cell.get('objectValue') or {}
+    if not isinstance(obj,dict):obj={}
     if obj.get('objectType')=='CONTACT':return obj.get('name') or obj.get('email') or cell.get('displayValue') or cell.get('value')
     return cell.get('value',cell.get('displayValue'))
 def comparable(value,field):
@@ -141,6 +143,9 @@ class DevReconciliation:
         if target.get('accessLevel') not in ('OWNER','ADMIN','EDITOR','EDITOR_SHARE'):
             raise WriteError('Current native DEV editing access is required.',403)
         self.source_version=source['version'];self.guard()
+        # Retain raw read-only evidence even if an unfamiliar native value fails preparation.
+        for name,value in [('source-before.json',source),('dev-before.json',target)]:
+            if not (self.directory/name).exists():save_json(self.directory/name,value)
         src,dev=indexed(source),indexed(target)
         columns={c['title']:c for c in target['columns']}
         self.source_before,self.dev_before=source,target
@@ -171,7 +176,7 @@ class DevReconciliation:
             values=[];source_columns={c['id']:c for c in source['columns']}
             for cell in a['cells']:
                 source_col=source_columns.get(cell['columnId'],{});col=columns.get(source_col.get('title'))
-                if not col or col.get('systemColumnType') or col.get('formula') or cell.get('formula') or col.get('title') in ('DEV Test Record','Project Stage'):continue
+                if not col or col.get('systemColumnType') or col.get('formula') or cell.get('formula') or col.get('title') in ('DEV Test Record','Project Stage','Latest Comment'):continue
                 self.editable(col,{})
                 if cell.get('value') is None and not cell.get('objectValue'):continue
                 out=self.copy_cell(cell,col)
@@ -191,7 +196,15 @@ class DevReconciliation:
             if len(matches)==1 and not is_dev({'fields':row_fields(target,matches[0])}):
                 self.mapping[str(source_row['id'])]={'sourceJob':job,'targetRow':str(matches[0]['id']),'targetJob':job}
         approved=Counter((c['job'],normalized(c['text']),normalized(c['author'])) for c in self.report['comments']['missingFromDev'])
-        comments=[]
+        # Native readback outranks an export that omitted existing discussions.
+        existing=defaultdict(list)
+        for thread in self.dev_discussions:
+            if thread.get('parentType')!='ROW':continue
+            for comment in thread.get('comments',[]):
+                author=comment.get('createdBy') or {}
+                key=(str(thread['parentId']),normalized(comment.get('text')),normalized(author.get('name') or author.get('email')),comment.get('createdAt'))
+                existing[key].append((str(thread['id']),str(comment['id'])))
+        comments=[];present=[]
         for discussion in self.source_discussions:
             if discussion.get('parentType')!='ROW':continue
             row_id=str(discussion['parentId']);job=next((normalized(row_fields(source,r).get('Graphics Req #')) for r in source['rows'] if str(r['id'])==row_id),'')
@@ -201,15 +214,24 @@ class DevReconciliation:
                 if not approved[key]:continue
                 approved[key]-=1
                 if row_id not in self.mapping and row_id not in import_ids:raise WriteError('A source comment has no safe DEV destination.',409)
+                mapped=self.mapping.get(row_id)
+                existing_key=(mapped['targetRow'] if mapped else '',normalized(comment.get('text')),normalized(name),comment.get('createdAt'))
+                if existing[existing_key]:
+                    target_thread,target_comment=existing[existing_key].pop(0)
+                    present.append({'sourceComment':str(comment['id']),'sourceDiscussion':str(discussion['id']),
+                                    'targetDiscussion':target_thread,'targetComment':target_comment})
+                    continue
                 marker='[Live Graphics comment '+self.source+':'+str(comment['id'])+']'
                 body=marker+'\nOriginal author: '+name+'\nOriginal date: '+str(comment.get('createdAt',''))+'\nOriginal request: '+job+'\n\n'+str(comment.get('text') or '')
                 comments.append({'sourceRow':row_id,'sourceJob':job,'sourceDiscussion':str(discussion['id']),
                                  'sourceComment':str(comment['id']),'marker':marker,'text':body})
         if any(approved.values()):raise WriteError('The current live comment inventory does not match all reviewed comments.',409)
         self.operations={'sourceVersion':self.source_version,'updates':[{'targetRow':k,'cells':v} for k,v in updates.items()],
-                         'creates':creates,'comments':comments,'mapping':self.mapping}
+                         'creates':creates,'comments':comments,'existingComments':present,'mapping':self.mapping}
         if {'fields':sum(len(x['cells']) for x in self.operations['updates']),'newJobs':len(creates),'comments':len(comments)}!=self.plan['expectedCounts']:
             raise WriteError('The prepared operation count differs from the approved import.',409)
+        if len(present)!=self.plan.get('expectedExistingComments',0):
+            raise WriteError('The native existing-comment count differs from the reviewed preflight.',409)
         self.prepared_digest=digest(self.operations);save_json(self.directory/'prepared.json',self.operations)
         self.status('prepared',digest=self.prepared_digest,counts=self.plan['expectedCounts'])
         return self.operations
@@ -228,6 +250,7 @@ class DevReconciliation:
     def copy_cell(cell,column):
         out={'columnId':column['id'],'strict':True}
         obj=cell.get('objectValue')
+        if not isinstance(obj,dict):obj=None
         if obj and obj.get('objectType')=='CONTACT':
             out['objectValue']={k:v for k,v in obj.items() if k in ('objectType','email','name')}
         elif obj and obj.get('objectType') in ('MULTI_PICKLIST','MULTI_CONTACT'):
@@ -289,7 +312,7 @@ class DevReconciliation:
                 if marker.startswith('[Live Graphics comment '):
                     if marker in seen:raise WriteError('Duplicate native import markers need review.',409)
                     seen[marker]=(str(discussion['id']),str(comment['id']))
-        threads={}
+        threads={c['sourceDiscussion']:c['targetDiscussion'] for c in self.operations.get('existingComments',[])}
         for op in self.operations['comments']:
             key='comment:'+op['sourceComment'];state,saved=self.receipt(key,op)
             if saved:
@@ -360,7 +383,7 @@ class DevReconciliation:
         save_json(self.directory/'source-discussions-after.json',source_discussions_after)
         save_json(self.directory/'request-audit.json',self.client.requests)
         save_json(self.directory/'source-to-dev-mapping.json',self.mapping)
-        self.status('complete',counts=self.plan['expectedCounts'],protectedTestRows=len(protected),sourceUnchanged=True,mapping=self.mapping)
+        self.status('complete',counts=self.plan['expectedCounts'],existingCommentsPreserved=len(self.operations.get('existingComments',[])),protectedTestRows=len(protected),sourceUnchanged=True,mapping=self.mapping)
 
     def on_login(self,sid):
         if not self.path.exists():return
@@ -383,6 +406,7 @@ class DevReconciliation:
                 raise WriteError('The local reconciliation grant expired before apply.',403)
             except Exception as error:
                 self.status('paused',error=str(error))
+                save_json(self.directory/'diagnostic.json',{'traceback':traceback.format_exc()})
                 if hasattr(self,'client'):save_json(self.directory/'request-audit.json',self.client.requests)
             finally:
                 with self.lock:self.running=False

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from test_pilot import PilotTestCase
 from scripts.compare_smartsheet_exports import compare
-from backend.dev_reconciliation import DevReconciliation,NativeClient,row_fields
+from backend.dev_reconciliation import DevReconciliation,NativeClient,row_fields,cell_value
 from backend.dev_store import WriteError
 
 
@@ -150,3 +150,19 @@ class DevReconciliationTests(PilotTestCase):
         self.plan_path.write_text(json.dumps(plan))
         with patch.object(NativeClient,'pace'),self.assertRaises(WriteError):self.reconciler()
         self.assertFalse([c for c in self.native_calls if c[0]!='GET'])
+
+    def test_scalar_object_values_retain_native_primitives(self):
+        for value in ('Text',14,False):
+            cell={'columnId':1,'value':value,'objectValue':value}
+            self.assertEqual(cell_value(cell),value)
+            self.assertEqual(DevReconciliation.copy_cell(cell,{'id':2})['value'],value)
+
+    def test_existing_native_history_is_preserved_without_duplicate_import(self):
+        self.target_threads=copy.deepcopy(self.source_threads)
+        self.target_threads[0]['parentId']=12;self.target_threads[0]['id']=800
+        plan=json.loads(self.plan_path.read_text());plan['expectedCounts']['comments']=0;plan['expectedExistingComments']=2
+        self.plan_path.write_text(json.dumps(plan))
+        with patch.object(NativeClient,'pace'):
+            tool=self.reconciler();tool.apply()
+        self.assertEqual(len(self.target_threads),1)
+        self.assertFalse([c for c in self.native_calls if c[0]=='POST' and '/discussions' in c[1]])

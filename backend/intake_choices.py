@@ -1,7 +1,7 @@
 """Department suggestions from explicit source fields, never guessed organizations."""
 import re
 
-GROUP_COLUMNS = ('Group / department', 'Requestor Group', 'Requestor group / department', 'Department')
+GROUP_COLUMNS = ('Owner Group', 'Group / department', 'Requestor Group', 'Requestor group / department', 'Department')
 
 def department_value(cells, display):
     for title in GROUP_COLUMNS:
@@ -13,5 +13,11 @@ def department_value(cells, display):
     return match[1].strip() if match else ''
 
 def department_options(sheet):
-    return sorted({v.strip() for c in sheet.get('columns', []) if c.get('title') in GROUP_COLUMNS
-                   for v in c.get('options', []) if isinstance(v, str) and v.strip()}, key=str.casefold)
+    titles = {c['id']: c.get('title') for c in sheet.get('columns', [])}
+    values = {v.strip() for c in sheet.get('columns', []) if c.get('title') in GROUP_COLUMNS
+              for v in c.get('options', []) if isinstance(v, str) and v.strip()}
+    for row in sheet.get('rows', []):
+        cells = {titles.get(c['columnId']): c for c in row.get('cells', [])}
+        value = department_value(cells, lambda c: str(c.get('displayValue', c.get('value', '')) or ''))
+        if value: values.add(value)
+    return sorted(values, key=str.casefold)

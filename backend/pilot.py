@@ -111,6 +111,15 @@ class PilotConfig:
             self.invites[email] = role
         if not self.invites or len(self.invites) > 20:
             raise WriteError('Configure between one and twenty named pilot invites.', 503)
+        try:
+            from backend.organizations import validate_policy
+        except ImportError:
+            from organizations import validate_policy
+        try:
+            self.organization_routing = validate_policy(value.get('organizationRouting'),
+                {email for email, role in self.invites.items() if role in ('admin', 'coordinator')})
+        except (ValueError, TypeError, KeyError) as error:
+            raise WriteError('Invalid private organization routing: ' + str(error), 503) from None
         self.path = Path(value.get('statePath', Path(__file__).resolve().parents[1] / '.local/pilot-state.sqlite3'))
         self.writes = value.get('writesEnabled') is True
         employee_intake.settings(self)  # Validate optional identity configuration.
@@ -670,7 +679,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js'}
+        allowed = {'organization-fields.js','app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

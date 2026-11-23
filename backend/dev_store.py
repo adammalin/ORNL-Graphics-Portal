@@ -7,6 +7,10 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, quote
 from zoneinfo import ZoneInfo
+try:
+    from backend.organizations import ORGANIZATION_FIELDS, choices as organization_choices, resolve as resolve_organization
+except ImportError:
+    from organizations import ORGANIZATION_FIELDS, choices as organization_choices, resolve as resolve_organization
 
 STAGES = ['New', 'Assigned', 'Accepted', 'In Progress', 'In Review', 'Completed', 'Archived']
 YES = 'Yes - I can take this job.'
@@ -17,6 +21,7 @@ FIELDS = {
     'hours': 'Estimated Hours', 'priority': 'Priority', 'deliverables': 'Deliverables and Quantities',
     'requestor': 'Requestor', 'email': 'Requestor Email',
     'reference1': 'Reference link 1', 'reference2': 'Reference link 2',
+    **ORGANIZATION_FIELDS,
 }
 
 class WriteError(Exception):
@@ -109,10 +114,27 @@ class DevStore:
             from backend.intake_choices import department_options
         except ImportError:
             from intake_choices import department_options
-        return {'departmentOptions': department_options(self.reader.sheet), 'designers': list(designers.values()), 'taskTypes': columns.get('Task Type', {}).get('options', []), 'taskTypeMultiple': columns.get('Task Type', {}).get('type') == 'MULTI_PICKLIST', 'priorities': columns.get('Priority', {}).get('options', [])}
+        return {'organizationOptions': organization_choices(self.reader.sheet), 'departmentOptions': department_options(self.reader.sheet), 'designers': list(designers.values()), 'taskTypes': columns.get('Task Type', {}).get('options', []), 'taskTypeMultiple': columns.get('Task Type', {}).get('type') == 'MULTI_PICKLIST', 'priorities': columns.get('Priority', {}).get('options', [])}
 
     def permits_admin_row(self,row_id):
         return False
+
+    def organization_policy(self):
+        return None
+
+    def route_organization(self, columns, values, row=None):
+        policy = self.organization_policy()
+        if policy is None:
+            return
+        manager = columns.get('Assigning Manager', {})
+        if manager.get('type') != 'CONTACT_LIST':
+            raise WriteError('The native coordinating-manager field changed. Routing is paused.', 409)
+        titles = {c['id']: c['title'] for c in columns.values()}
+        previous = {titles.get(c['columnId']): c.get('value', '') for c in (row or {}).get('cells', [])}
+        decision = resolve_organization(policy,
+            values.get('Owner Directorate', previous.get('Owner Directorate', '')),
+            values.get('Owner Division/Office/Facility', previous.get('Owner Division/Office/Facility', '')))
+        values['Assigning Manager'] = decision['email']
 
     def row(self, job_id, expected=None):
         columns = {c['id']: c['title'] for c in self.reader.sheet['columns']}
@@ -146,6 +168,11 @@ class DevStore:
                 if not person:
                     raise WriteError('Choose a designer from the DEV directory.')
                 out = {'columnId': col['id'], 'objectValue': {'objectType': 'CONTACT', 'email': value, 'name': person['name']}, 'strict': True}
+            if title == 'Assigning Manager' and self.organization_policy():
+                person = next((p for p in self.organization_policy()['managers'].values() if p['email'] == value), None)
+                if not person:
+                    raise WriteError('The coordinating manager is not in the reviewed routing policy.', 409)
+                out = {'columnId': col['id'], 'value': value, 'displayValue': person['name'], 'strict': True}
             if cell.get('hyperlink'):
                 raise WriteError('This cell has a native hyperlink; edit it in Smartsheet to preserve its link.', 409)
             result.append(out)
@@ -181,6 +208,8 @@ class DevStore:
                         raise WriteError('Reference links must be complete http or https URLs.')
                 if key in ('taskType', 'priority') and value not in columns[title].get('options', []):
                     raise WriteError('Choose an existing DEV ' + title.lower() + '.')
+                if key in ('directorate', 'division') and value and value not in columns[title].get('options', []):
+                    raise WriteError('Choose an existing ' + title.lower() + ', or leave it blank for coordination.')
             values[title] = value
         return values
 
@@ -234,7 +263,7 @@ class DevStore:
                 # Preserve every supplied request detail in one native-readable cell;
                 # no new columns or formula changes are needed.
                 details = text(fields.pop('description', ''), 'Project details', True)
-                for detail_key, label in [('notes', 'Notes / additional details'), ('audience', 'Intended audience'), ('specifications', 'Dimensions / file formats'), ('requestorGroup', 'Requestor group / department')]:
+                for detail_key, label in [('notes', 'Notes / additional details'), ('audience', 'Intended audience'), ('specifications', 'Dimensions / file formats')]:
                     extra = text(fields.pop(detail_key, ''), label)
                     if extra:
                         details += '\n\n' + label + ':\n' + extra
@@ -249,6 +278,7 @@ class DevStore:
                 fields['title'] = '[DEV PORTAL] ' + fields['title'].removeprefix('[DEV PORTAL] ')
                 fields['priority'] = 'Normal'
                 values = self.clean_fields(fields, columns)
+                self.route_organization(columns, values)
                 values.update({'DEV Test Record': True, 'Project Stage': 'New'})
                 if self_assign_to:
                     values.update({'Requested Designer':self_assign_to,
@@ -278,6 +308,8 @@ class DevStore:
                 action = body.get('action')
                 if action == 'edit' and set(body) == {'action', 'revision', 'fields'}:
                     values = self.clean_fields(body['fields'], columns)
+                    if set(body['fields']) & {'directorate', 'division'}:
+                        self.route_organization(columns, values, row)
                 elif action == 'offer' and set(body) == {'action', 'revision', 'designer'}:
                     if project['response'] == 'accepted' or project['stage'] in ('Completed', 'Archived'):
                         raise WriteError('Offer a new, unassigned active request.', 409)

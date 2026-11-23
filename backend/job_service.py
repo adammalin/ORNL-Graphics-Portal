@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from contextlib import contextmanager
 import copy
 import hashlib
+import json
 import re
 import time
 from datetime import datetime, timezone
@@ -48,6 +49,7 @@ class PilotStore(DevStore):
         self._self_contact = {'id':actor.email,'name':actor.name,
                               'initials':''.join(p[:1] for p in actor.name.split()[:2]),'capacity':None}
         self._write_guard = None
+        self._routing_version = None
         self._admin_rows = frozenset()
         super().__init__(reader, path)
 
@@ -74,6 +76,9 @@ class PilotStore(DevStore):
         if not config.workflow_review_valid():
             raise WriteError('The native workflow review is missing or expired. Pilot writes are paused.', 403)
 
+    def organization_policy(self):
+        return self.runtime.active_config().organization_routing
+
     def validate_source(self, *, source_current=False):
         self.require_writes()
         return super().validate_source(source_current=source_current)
@@ -84,11 +89,13 @@ class PilotStore(DevStore):
         if self._write_guard is not None:
             raise WriteError('A save is already in progress.', 409)
         self._write_guard = guard
+        self._routing_version = json.dumps(self.organization_policy(), sort_keys=True)
         self._admin_rows = frozenset(admin_rows)
         try:
             yield
         finally:
             self._write_guard = None
+            self._routing_version = None
             self._admin_rows = frozenset()
 
     def permits_admin_row(self,row_id):
@@ -97,6 +104,8 @@ class PilotStore(DevStore):
     def _write(self, *args, **kwargs):
         if self._write_guard is None:
             raise WriteError('Use the authenticated job service to save.', 403)
+        if self._routing_version != json.dumps(self.organization_policy(), sort_keys=True):
+            raise WriteError('Organization routing changed during this request. Refresh and review before saving.', 409)
         self._write_guard()
         return super()._write(*args, **kwargs)
 
@@ -240,6 +249,7 @@ class JobService:
             'projects': projects, 'designers': directory,
             'sourceVersion': context.reader.version,
             'departmentOptions': raw.get('departmentOptions', []),
+            'organizationOptions': raw.get('organizationOptions', {}),
             'capabilities': self._capabilities(context),
             'taskTypes': raw.get('taskTypes', []),
             'taskTypeMultiple': raw.get('taskTypeMultiple', False),
@@ -250,7 +260,7 @@ class JobService:
 
     def _policy_version(self,context):
         config=self.runtime.active_config()
-        return (context.principal,tuple(sorted(config.invites.items())),config.writes,config.workflow_review_valid(),self.runtime.lifecycle.epoch())
+        return (context.principal,tuple(sorted(config.invites.items())),config.writes,config.workflow_review_valid(),json.dumps(config.organization_routing, sort_keys=True),self.runtime.lifecycle.epoch())
 
     def workspace(self, session_id):
         with self.runtime.sheet_lock:
@@ -344,6 +354,9 @@ class JobService:
                                else False)
                     if not allowed:
                         raise WriteError('Your account cannot perform this action on this job.', 403)
+                    if (action == 'edit' and isinstance(body.get('fields'), dict)
+                            and set(body['fields']) & {'directorate', 'division'} and not principal.can_coordinate):
+                        raise WriteError('Only coordinators and admins can change routing organization fields.', 403)
                     if action == 'offer' and body.get('designer') not in self.runtime.active_config().invites:
                         raise WriteError('Offer jobs only to invited pilot users.', 403)
             else:

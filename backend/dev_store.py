@@ -29,6 +29,13 @@ class WriteError(Exception):
         super().__init__(message)
         self.status = status
 
+class SaveRefreshError(WriteError):
+    """The native write was acknowledged and its durable receipt is saved."""
+    def __init__(self, job_id=None, created_row_id=None):
+        super().__init__('Saved to DEV Smartsheet, but the refreshed job data is not available yet. Refresh DEV data before editing again; do not submit another request.', 503)
+        self.job_id = job_id
+        self.created_row_id = created_row_id
+
 def text(value, label, required=False):
     if not isinstance(value, str):
         raise WriteError(label + ' must be text.')
@@ -248,9 +255,9 @@ class DevStore:
                 prior = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?', (self.reader.sheet_id, key)).fetchone()
             if prior:
                 done = self.begin(key, fingerprint)
-                result=self.result(done['jobId'])
-                if done.get('createdRowId') and not any(p['id']==done['jobId'] and p['_rowId']==done['createdRowId'] for p in result['projects']):
-                    raise WriteError('The original created row is no longer available. Ask an admin to reconcile this request.',409)
+                result=self.result(done.get('jobId'), done.get('createdRowId'), allow_pending=done.get('readbackPending',False))
+                if done.get('createdRowId'):
+                    self.finish(key, {'jobId': result['jobId'], 'createdRowId': done['createdRowId']})
                 return {**result,'createdRowId':done.get('createdRowId')}
             columns = self.validate_source(source_current=True) if source_current else self.validate_source()
             if job_id is None:
@@ -288,18 +295,16 @@ class DevStore:
                 response = self._write('POST', f'/sheets/{self.reader.sheet_id}/rows', payload, 'new-dev-request')
                 row = response['result'][0]
                 row_id = str(row['id'])
-                # Save the row ID immediately, before any dependent GET/readback.
-                with self.db() as db:
-                    db.execute('INSERT OR IGNORE INTO rows VALUES (?,?)', (self.reader.sheet_id, row_id))
+                # Native acknowledgement is durable even if the readback fails.
+                native_job = next((c.get('value') for c in row.get('cells', [])
+                    if c['columnId'] == columns['Graphics Req #']['id']), None)
+                self.finish(key, {'jobId': native_job, 'createdRowId': row_id, 'readbackPending':True}, row_id)
                 self.reader.row_ids = frozenset(set(self.reader.row_ids) | {row_id})
-                self.reader.projects(force=True)
-                projected = next((p for p in self.reader._cache['projects'] if p.get('_rowId') == row_id), None)
-                if not projected:
-                    raise WriteError('The request may be saved, but its generated job number is not ready. Refresh before submitting again.', 502)
-                job_id = projected['id']
+                result = self.result(native_job, row_id, allow_pending=True)
+                job_id = result['jobId']
                 self.finish(key, {'jobId': job_id,'createdRowId':row_id}, row_id)
                 # This was just read back by permanent row ID; do not load it twice.
-                return {**self.reader._cache, 'jobId': job_id,'createdRowId':row_id}
+                return {**result, 'createdRowId':row_id}
             else:
                 if set(body) - {'action', 'revision', 'fields', 'stage', 'designer'}:
                     raise WriteError('Unknown save parameter.')
@@ -338,8 +343,25 @@ class DevStore:
                 self.finish(key, {'jobId': job_id})
             return self.result(job_id)
 
-    def result(self, job_id):
-        data = self.reader.projects(force=True)
+    def result(self, job_id, created_row_id=None, *, allow_pending=False):
+        # Import locally: the server module also imports this writer.
+        try:
+            from backend.server import GatewayError
+        except ImportError:
+            from server import GatewayError
+        try:
+            data = self.reader.projects(force=True)
+        except GatewayError:
+            raise SaveRefreshError(job_id, created_row_id) from None
+        if created_row_id:
+            projected = next((p for p in data['projects'] if p['_rowId'] == created_row_id), None)
+            if not projected:
+                if allow_pending:
+                    raise SaveRefreshError(job_id, created_row_id)
+                raise WriteError('The original created row is no longer available. Ask an admin to reconcile this request.',409)
+            if job_id and projected['id'] != job_id:
+                raise WriteError('The original created row cannot be verified. Ask an admin to reconcile this request.',409)
+            job_id = projected['id']
         return {**data, 'jobId': job_id}
 
     def verification(self):

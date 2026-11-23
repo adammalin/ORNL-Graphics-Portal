@@ -17,6 +17,7 @@ from backend.server import GatewayError
 class DevReconciliationTests(PilotTestCase):
     def setUp(self):
         super().setUp();self.value['invites'][0]['role']='admin'
+        self.fake.columns=[c for c in self.fake.columns if c['title']!='Status']
         status={'id':99,'title':'Status','type':'PICKLIST','options':['New','Designer Accepted']}
         self.fake.columns.append(status);self.fake.bytitle['Status']=status
         self.fake.rows[1]['cells'].append({'columnId':99,'value':'New'})

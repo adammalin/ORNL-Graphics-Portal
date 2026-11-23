@@ -9,7 +9,12 @@ except ImportError:
     from dev_store import WriteError
 
 
-SCHEMA_VERSION = 5
+try:
+    from backend.assignment_history import DDL as ASSIGNMENT_DDL
+except ImportError:
+    from assignment_history import DDL as ASSIGNMENT_DDL
+
+SCHEMA_VERSION = 6
 MIGRATIONS = (
     (1, (
         """CREATE TABLE ai_intake_contexts (
@@ -84,6 +89,7 @@ MIGRATIONS = (
         'CREATE TABLE job_lifecycle_operations (sheet_id TEXT NOT NULL,user_id TEXT NOT NULL,operation_key TEXT NOT NULL,payload_hash TEXT NOT NULL,result_json TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(sheet_id,user_id,operation_key))',
         'CREATE TABLE job_ownership (sheet_id TEXT NOT NULL,row_id TEXT NOT NULL,job_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(sheet_id,row_id))',
     )),
+    (6, ASSIGNMENT_DDL),
 )
 
 

@@ -1,3 +1,4 @@
+import {organizationInputs} from './organization-fields.js';
 import {readPortalJson} from './http-client.js';
 import {searchSelect,mountSearchSelects,showChoiceError} from './search-select.js';
 /* Authenticated employee form. This module never calls Smartsheet directly. */
@@ -29,7 +30,7 @@ function render() {
   </div></fieldset>
   <fieldset class="form-section" id="contact-fields"><legend><span>02</span>Your information</legend><div class="form-grid">
   ${field('requestor','Your name',{value:session.name,readonly:true})}${field('email','Your email',{type:'email',value:session.email,readonly:true})}
-  ${searchSelect('requestorGroup','Group / department',{value:session.department,options:session.departmentOptions||[],full:true,allowCustom:true})}</div></fieldset>
+  ${organizationInputs(session.organizationOptions,session.departmentOptions||[],{requestorGroup:session.department||''})}<p class="quiet-note field full">If you’re unsure of your organization, leave it blank and Graphics will help coordinate.</p></div></fieldset>
   <fieldset class="form-section" id="reference-fields"><legend><span>03</span>References and additional details</legend><div class="form-grid">
   ${field('reference1','Reference link 1',{type:'url',full:true})}${field('reference2','Reference link 2',{type:'url',full:true})}
   <div class="field full"><label for="attachments">Reference files</label><div class="upload-zone"><input id="attachments" name="attachments" type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"><p>Up to 10 files, 30 MB each. PNG, JPEG, WebP, PDF or plain text.</p></div></div>

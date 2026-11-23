@@ -163,13 +163,27 @@ class MicrosoftIntakeTests(PilotTestCase):
         project=next(p for p in self.intake.reader.projects(force=True)['projects'] if p['id']==result['jobId'])
         self.assertEqual(project['requestor'],'Fictional Employee')
         self.assertEqual(project['stage'],'New')
-        for detail in ['Explain a synthetic process.','Preserve this extra request detail.','Students','Editable SVG','Sample Science']:
+        self.assertEqual(project['requestorGroup'],'Sample Science')
+        for detail in ['Explain a synthetic process.','Preserve this extra request detail.','Students','Editable SVG']:
             self.assertIn(detail,project['description'])
         cells={c['columnId']:c for c in self.fake.rows[-1]['cells']}
         self.assertEqual(cells[self.fake.bytitle['Requestor Email']['id']]['value'],'employee@example.org')
         self.assertEqual(len(self.writes()),1)
         coord,_=self.login('coord')
         self.assertIn(result['jobId'],[p['id'] for p in self.get(coord,'/api/projects').get_json()['projects']])
+
+    def test_employee_form_org_inputs_map_to_native_columns(self):
+        self.fake.bytitle['Owner Directorate'].update(type='PICKLIST',options=['Fictional Research'])
+        self.fake.bytitle['Owner Division/Office/Facility'].update(type='PICKLIST',options=['Fictional Division'])
+        client=self.ms_login();info=self.get(client,'/api/intake/session').get_json()
+        self.assertEqual(info['organizationOptions']['directorate'],['Fictional Research'])
+        body=self.body();body['fields'].update(directorate='Fictional Research',division='Fictional Division')
+        response=self.ms_write(client,'/api/intake/requests',body)
+        self.assertEqual(response.status_code,200,response.get_json())
+        cells={c['columnId']:c.get('value') for c in self.fake.rows[-1]['cells']}
+        self.assertEqual(cells[self.fake.bytitle['Owner Directorate']['id']],'Fictional Research')
+        self.assertEqual(cells[self.fake.bytitle['Owner Division/Office/Facility']['id']],'Fictional Division')
+        self.assertEqual(cells[self.fake.bytitle['Owner Group']['id']],'Sample Science')
         with self.runtime.db() as db:
             self.assertEqual(db.execute('SELECT owner FROM employee_intake_receipts').fetchone()[0],TENANT+':'+MEMBER)
             self.assertNotIn('secret',str(db.execute('SELECT * FROM employee_intake_audit').fetchall()))

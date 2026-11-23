@@ -32,7 +32,7 @@ CALLBACK = '/auth/microsoft/callback'
 GUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
 EMAIL = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+')
 ALLOWED_FIELDS = frozenset({'title', 'description', 'taskType', 'dueDate', 'deliverables',
-    'audience', 'specifications', 'requestorGroup', 'reference1', 'reference2', 'notes',
+    'audience', 'specifications', 'requestorGroup', 'directorate', 'division', 'reference1', 'reference2', 'notes',
     'requestor', 'email'})
 
 
@@ -245,7 +245,7 @@ class IntakeService:
         actor = session.actor
         cfg = self.active()
         return {'name': actor.name, 'email': actor.email, 'department': actor.department,
-                'csrf': session.csrf, 'departmentOptions': data.get('departmentOptions', []), 'taskTypes': data['taskTypes'],
+                'csrf': session.csrf, 'organizationOptions': data.get('organizationOptions', {}), 'departmentOptions': data.get('departmentOptions', []), 'taskTypes': data['taskTypes'],
                 'taskTypeMultiple': data['taskTypeMultiple'],
                 'canSubmit': bool(cfg.writes and cfg.workflow_review_valid()
                                   and self.reader.sheet.get('accessLevel') in WRITABLE_ACCESS)}

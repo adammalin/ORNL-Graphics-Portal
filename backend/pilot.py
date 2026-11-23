@@ -322,7 +322,7 @@ class PilotRuntime:
 
 
 def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetReader, reload_config=None,
-               microsoft_secret=None, intake_token=None, microsoft_oauth=None):
+               microsoft_secret=None, intake_token=None, microsoft_oauth=None, reconciliation_plan=None):
     if not secret:
         raise WriteError('Enter the OAuth app secret at the hidden local prompt.',503)
     config = config if isinstance(config,PilotConfig) else PilotConfig(config)
@@ -334,6 +334,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     app.extensions['pilot'] = runtime
     app.extensions['job_service'] = runtime.jobs
     app.extensions['ai_service'] = runtime.ai
+    if reconciliation_plan:
+        from backend.dev_reconciliation import DevReconciliation
+        runtime.reconciliation = DevReconciliation(runtime,reconciliation_plan)
     intake = (employee_intake.IntakeService(runtime, microsoft_secret, intake_token, microsoft_oauth)
               if employee_intake.settings(config) else None)
     app.extensions['employee_intake'] = intake
@@ -522,6 +525,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
             raise WriteError('Smartsheet sign-in was not approved. You can start again.',401)
         state = request.args.get('state','')
         sid,session = runtime.complete_login(state,request.cookies.get(LOGIN_COOKIE,''),request.args.get('code',''))
+        if getattr(runtime,'reconciliation',None):runtime.reconciliation.on_login(sid)
         old = request.cookies.get(SESSION_COOKIE)
         if old:
             runtime.logout(old)
@@ -678,6 +682,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',default='.local/pilot-config.json')
     parser.add_argument('--port',type=int,default=4175)
+    parser.add_argument('--reconciliation-plan',help='Private, expiring, owner-bound one-shot DEV maintenance plan; never exposed through an API.')
     parser.add_argument('--secret-source', choices=('keychain', 'prompt'),
                         default='keychain' if sys.platform == 'darwin' else 'prompt')
     args = parser.parse_args()
@@ -705,7 +710,7 @@ def main():
             else:
                 intake_token = value.strip()
     app = create_app(config,secret,reload_config=load,
-                     microsoft_secret=microsoft_secret,intake_token=intake_token)
+                     microsoft_secret=microsoft_secret,intake_token=intake_token,reconciliation_plan=args.reconciliation_plan)
     from waitress import serve
     print('Authenticated pilot ready behind '+config.origin,flush=True)
     print('Loopback backend: http://127.0.0.1:'+str(args.port),flush=True)

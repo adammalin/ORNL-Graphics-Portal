@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {organizationInputs} from '../web/organization-fields.js';
+import {organizationInputs,organizationValues} from '../web/organization-fields.js';
 
 test('intake and edits submit distinct native organization values, with custom groups only',()=>{
   const html=organizationInputs({directorate:['Science'],division:['Research']},['Group A'],{directorate:'Science',division:'Research',requestorGroup:'Group A'});
@@ -17,4 +17,12 @@ test('organization names are escaped and existing values stay selected',()=>{
   assert.ok(!html.includes('<img src=x'));
   assert.ok(html.includes('&lt;img'));
   assert.match(html,/<option value="Legacy division" selected>/);
+});
+
+test('cleared optional selections send empty values, never a literal null or hidden routing fields',()=>{
+  const data=new FormData();data.set('edit-requestorGroup','Group A');
+  assert.deepEqual(organizationValues(data,'edit-'),{directorate:'',division:'',requestorGroup:'Group A'});
+  assert.deepEqual(organizationValues(data,'edit-',false),{requestorGroup:'Group A'});
+  data.delete('edit-requestorGroup');
+  assert.deepEqual(organizationValues(data,'edit-'),{directorate:'',division:'',requestorGroup:''});
 });

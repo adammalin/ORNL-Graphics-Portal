@@ -107,6 +107,17 @@ class OrganizationRoutingTests(PilotTestCase):
         self.assertEqual(job['response'],'accepted');self.assertEqual(job['stage'],'Accepted')
         self.assertEqual(job['requestedDesigner'],'designer@example.org');self.assertEqual(job['coordinatingManager'],'operations@example.org')
 
+    def test_clearing_both_organization_fields_routes_to_central_and_preserves_acceptance(self):
+        client,_=self.login('coord');body=self.body(division='Shared Facility');body['assignToMe']=True
+        data=self.write(client,'/api/projects',body).get_json();job=next(p for p in data['projects'] if p['id']==data['jobId'])
+        result=self.write(client,'/api/projects/'+job['id'],{'action':'edit','revision':job['revision'],
+            'fields':{'directorate':'','division':''}})
+        self.assertEqual(result.status_code,200,result.get_json())
+        saved=next(p for p in result.get_json()['projects'] if p['id']==job['id'])
+        self.assertEqual(saved['coordinatingManager'],'coordinator@example.org')
+        self.assertEqual((saved['directorate'],saved['division']),('',''))
+        self.assertEqual((saved['response'],saved['stage'],saved['requestedDesigner']),('accepted','Accepted','coordinator@example.org'))
+
     def test_policy_change_during_save_and_ineligible_manager_fail_closed(self):
         client,_=self.login('coord');store=self.readers[-1].store;original=store.route_organization
         def change_during_save(*args,**kwargs):

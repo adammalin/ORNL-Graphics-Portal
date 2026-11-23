@@ -1,4 +1,4 @@
-import {organizationInputs} from './organization-fields.js';
+import {organizationInputs,organizationValues} from './organization-fields.js';
 import {readPortalJson,mediaType} from './http-client.js';
 import {createWorkspaceSync} from './workspace-sync.js';
 import {searchSelect,mountSearchSelects,showChoiceError,uniqueChoices} from './search-select.js';
@@ -342,7 +342,7 @@ document.addEventListener('submit',async event=>{
       const data=new FormData(form),title=String(data.get('edit-title')).trim(),hours=String(data.get('edit-hours')).trim()===''?null:Number(data.get('edit-hours'));
       if(!title||(hours!==null&&(!Number.isFinite(hours)||hours<0||hours>10000)))throw new Error('Enter a title and a valid non-negative estimate.');
       const values={title,hours,priority:String(data.get('edit-priority'))};
-      if(live())Object.assign(values,{requestedDueDate:String(data.get('edit-requested-date')),finalDueDate:String(data.get('edit-final-date')),taskType:state.taskTypeMultiple?data.getAll('edit-type'):String(data.get('edit-type')),description:String(data.get('edit-description')),deliverables:String(data.get('edit-deliverables')),reference1:String(data.get('edit-reference1')),reference2:String(data.get('edit-reference2')),requestorGroup:String(data.get('edit-requestorGroup')),...(isCoordinator()?{directorate:String(data.get('edit-directorate')),division:String(data.get('edit-division'))}:{})});
+      if(live())Object.assign(values,{requestedDueDate:String(data.get('edit-requested-date')),finalDueDate:String(data.get('edit-final-date')),taskType:state.taskTypeMultiple?data.getAll('edit-type'):String(data.get('edit-type')),description:String(data.get('edit-description')),deliverables:String(data.get('edit-deliverables')),reference1:String(data.get('edit-reference1')),reference2:String(data.get('edit-reference2')),...organizationValues(data,'edit-',isCoordinator())});
       else Object.assign(values,{dueDate:String(data.get('edit-date')),notes:String(data.get('edit-notes'))});
       const fields=Object.fromEntries(Object.entries(values).filter(([k,v])=>k==='taskType'&&state.taskTypeMultiple?JSON.stringify(v)!==JSON.stringify(p.taskTypes):v!==(k.startsWith('reference')?(p.references||[]).find(r=>r.label==='Reference link '+k.slice(-1))?.url||'':p[k]??'')));
       if(!Object.keys(fields).length){dialog.close();toast('No changes to save.');return;}

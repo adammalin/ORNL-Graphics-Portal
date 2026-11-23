@@ -14,11 +14,11 @@ import time
 from datetime import datetime, timezone
 
 try:
-    from backend.dev_store import DevStore, WriteError, SaveRefreshError
+    from backend.dev_store import DevStore, WriteError, SaveRefreshError, allowed_stages
     from backend.principals import Principal
     from backend.server import GatewayError, MAX_FILE_BYTES
 except ImportError:
-    from dev_store import DevStore, WriteError, SaveRefreshError
+    from dev_store import DevStore, WriteError, SaveRefreshError, allowed_stages
     from principals import Principal
     from server import GatewayError, MAX_FILE_BYTES
 
@@ -48,6 +48,7 @@ class PilotStore(DevStore):
         self.identities = frozenset(actor.identities)
         self._self_contact = {'id':actor.email,'name':actor.name,
                               'initials':''.join(p[:1] for p in actor.name.split()[:2]),'capacity':None}
+        self._assignment_actor={'id':actor.user_id,'name':actor.name,'email':actor.email}
         self._write_guard = None
         self._routing_version = None
         self._admin_rows = frozenset()
@@ -78,6 +79,9 @@ class PilotStore(DevStore):
 
     def organization_policy(self):
         return self.runtime.active_config().organization_routing
+
+    def assignment_actor(self):
+        return self._assignment_actor
 
     def validate_source(self, *, source_current=False):
         self.require_writes()
@@ -177,6 +181,17 @@ class JobService:
                           and project.get('stage') not in ('Completed', 'Archived')),
         }
 
+    def _action_allowed(self, context, project, action, permissions=None):
+        permissions=self._permissions(context,project) if permissions is None else permissions
+        active=project['stage'] not in ('Completed','Archived')
+        if action=='reassign':
+            return bool(permissions['edit'] and context.principal.can_coordinate and active and project['response']=='accepted')
+        if action=='claim':
+            return bool(permissions['edit'] and project['stage']=='New' and project['response']!='accepted'
+                        and (not project['requestedDesigner'] or project['response']=='declined'))
+        return (permissions['respond'] if action in ('accept','decline') else permissions['offer'] if action=='offer'
+                else permissions['edit'] if action in ('edit','stage','upload') else False)
+
     def _project(self, context, job_id, include_deleted=False):
         project = next((p for p in context.reader._cache['projects'] if p['id'] == job_id), None)
         if not project or not self._can_read(context.principal, project):
@@ -188,6 +203,9 @@ class JobService:
     def _project_dto(self, context, project):
         output = copy.deepcopy({key: value for key, value in project.items() if key != '_rowId'})
         output['permissions'] = self._permissions(context, project)
+        output['allowedStages']=allowed_stages(project)
+        output['assignmentActions']={action:self._action_allowed(context,project,action,output['permissions']) for action in ('claim','reassign')}
+        output['assignment']=context.reader.store.assignment_details(project)
         output['lifecycleVersion'] = self.runtime.lifecycle.state(context.reader.sheet_id,project['_rowId'])['version']
         output['requesterTrackable'] = False
         if getattr(self.runtime,'intake',None) and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled'):
@@ -205,11 +223,7 @@ class JobService:
         if current.reader.sheet.get('accessLevel') not in WRITABLE_ACCESS:
             raise WriteError('Your Smartsheet account cannot edit this sheet.', 403)
         if job_id:
-            permissions = self._permissions(current, self._project(current, job_id))
-            allowed = (permissions['respond'] if action in ('accept', 'decline')
-                       else permissions['offer'] if action == 'offer'
-                       else permissions['edit'] if action in ('edit', 'stage', 'upload')
-                       else False)
+            allowed = self._action_allowed(current,self._project(current,job_id),action)
             if not allowed:
                 raise WriteError('Your account cannot perform this action on this job.', 403)
 
@@ -353,17 +367,16 @@ class JobService:
                         (reader.sheet_id, key)).fetchone()
                 if not replay:
                     action = body.get('action') if isinstance(body, dict) else None
-                    allowed = (permissions['respond'] if action in ('accept', 'decline')
-                               else permissions['offer'] if action == 'offer'
-                               else permissions['edit'] if action in ('edit', 'stage')
-                               else False)
+                    allowed = self._action_allowed(context,project,action)
                     if not allowed:
                         raise WriteError('Your account cannot perform this action on this job.', 403)
                     if (action == 'edit' and isinstance(body.get('fields'), dict)
                             and set(body['fields']) & {'directorate', 'division'} and not principal.can_coordinate):
                         raise WriteError('Only coordinators and admins can change routing organization fields.', 403)
-                    if action == 'offer' and body.get('designer') not in self.runtime.active_config().invites:
+                    if action in ('offer','reassign') and body.get('designer') not in self.runtime.active_config().invites:
                         raise WriteError('Offer jobs only to invited pilot users.', 403)
+                if isinstance(body,dict) and body.get('action')=='claim':
+                    self_assign_to=principal.email
             else:
                 if (not isinstance(body, dict) or set(body)-{'fields','assignToMe'}
                         or not isinstance(body.get('fields'), dict)
@@ -392,7 +405,7 @@ class JobService:
                                    (reader.sheet_id, saved_job, principal.user_id))
                         db.execute('INSERT OR IGNORE INTO job_ownership VALUES (?,?,?,?,?)',
                             (reader.sheet_id,saved['_rowId'],saved_job,principal.user_id,datetime.now(timezone.utc).isoformat()))
-                self.runtime.audit(principal, 'create-self-assigned' if self_assign_to else body.get('action', 'create'), saved_job, 'success')
+                self.runtime.audit(principal, 'create-self-assigned' if self_assign_to and job_id is None else body.get('action', 'create'), saved_job, 'success')
                 context = self._resolve(session_id)
                 return {**self._workspace(context, result), 'jobId': saved_job}
             except SaveRefreshError as error:

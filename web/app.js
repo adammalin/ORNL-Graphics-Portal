@@ -1,4 +1,5 @@
 import {organizationInputs,organizationValues} from './organization-fields.js';
+import {assignmentPanel,reassignmentForm} from './assignment-panel.js';
 import {readPortalJson,mediaType,recoverConfirmedSave} from './http-client.js';
 import {createWorkspaceSync} from './workspace-sync.js';
 import {searchSelect,mountSearchSelects,showChoiceError,uniqueChoices} from './search-select.js';
@@ -138,7 +139,8 @@ function renderDetail(id, focusReferences=false) {
       ${p.readOnly?'':state.aiModule?'<section id="ai-panel" class="ai-panel" aria-label="AI project brief"></section>':`<section class="future-panel"><h2>${icon('spark')}AI project brief <span class="planned-label">Planned</span></h2><p>Future assistance could summarize the request, suggest tasks and identify unresolved details. AI is not enabled in this prototype.</p></section>`}
     </div><aside class="detail-side">
       <section class="panel"><h2>Request information</h2><dl class="metadata"><div><dt>Requestor</dt><dd>${e(p.requestor||'Not specified')}</dd></div><div><dt>Email</dt><dd>${e(p.email||'Not specified')}</dd></div><div><dt>Directorate</dt><dd>${e(p.directorate||'Not specified')}</dd></div><div><dt>Division / office / facility</dt><dd>${e(p.division||'Not specified')}</dd></div><div><dt>Coordinating manager</dt><dd>${e(p.coordinatingManagerName||p.coordinatingManager||'Awaiting coordination')}</dd></div><div><dt>Group / department</dt><dd>${e(p.requestorGroup||(live()?'See project details':'Not specified'))}</dd></div><div><dt>Received</dt><dd>${e(formatDate(p.createdDate))}</dd></div><div><dt>Completed</dt><dd>${e(formatDate(p.completedDate))}</dd></div></dl></section>
-      <section class="panel detail-controls"><h2>Project stage</h2>${canEdit(p)?`<label for="job-stage">Update stage</label><select id="job-stage">${STAGES.map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select><button class="button button-primary button-small" data-action="save-stage" data-id="${e(p.id)}">Update stage</button>`:`${stageTag(p.stage)}${p.sourceStatus?`<p>Source status: ${e(p.sourceStatus)}</p>`:''}<p class="quiet-note">${p.readOnly?'Copied projects are read-only.':readonly()?'Stage changes are disabled in the read-only connection.':assigned?'Switch to the assigned demo designer or coordinator to update this project.':'Assignment is recorded only after the offered designer accepts.'}</p>`}</section>
+      <section class="panel detail-controls"><h2>Project stage</h2>${canEdit(p)?`<label for="job-stage">Update stage</label><select id="job-stage">${(p.allowedStages||STAGES).map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select><button class="button button-primary button-small" data-action="save-stage" data-id="${e(p.id)}">Update stage</button>`:`${stageTag(p.stage)}${p.sourceStatus?`<p>Source status: ${e(p.sourceStatus)}</p>`:''}<p class="quiet-note">${p.readOnly?'Copied projects are read-only.':readonly()?'Stage changes are disabled in the read-only connection.':assigned?'Switch to the assigned demo designer or coordinator to update this project.':'Assignment is recorded only after the offered designer accepts.'}</p>`}</section>
+      ${live()?assignmentPanel({...p,assignmentActions:readonly()?{}:p.assignmentActions},state.designers):''}
       ${!readonly()&&isCoordinator()&&!assigned&&(!authenticated||p.permissions?.offer)?`<section class="panel detail-controls"><h2>Offer to a designer</h2><label for="offer-designer">Requested designer</label><select id="offer-designer">${state.designers.filter(d=>d.canReceiveOffer!==false).map(d=>`<option value="${e(d.id)}" ${d.id===p.requestedDesigner?'selected':''}>${e(d.name)}</option>`).join('')}</select><button class="button button-primary button-small" data-action="offer" data-id="${e(p.id)}">${live()?'Save designer offer':'Record demo offer'}</button><p class="quiet-note">No email is sent. ${authenticated?'The invited designer records acceptance in their own signed-in session.':live()?'Use the offered designer’s local test view to record acceptance.':'The designer must accept in the demo.'}</p></section>`:''}
       <section class="panel"><h2>Project connections</h2><dl class="metadata"><div><dt>SCOUT job</dt><dd>Not connected</dd></div><div><dt>Project folder</dt><dd>Not connected</dd></div></dl><p class="quiet-note">SCOUT and Dropbox integration are future work.</p></section>
     </aside></div>`;
@@ -305,6 +307,8 @@ document.addEventListener('click',async event=>{
     if(action==='board-view'||action==='list-view'){state.view=action==='board-view'?'board':'list';render();return;}
     if(action==='show-designer'){state.query='';state.filterStage='';state.filterDesigner=button.dataset.person;state.lastWorkspace='projects';location.hash='#/projects';return;}
     if(action==='accept'||action==='decline'){await accept(id,action==='accept');return;}
+    if(action==='claim'){const p=findProject(id);if(!p?.assignmentActions?.claim||readonly())throw new Error('This job cannot be claimed.');await mutate(id,p=>p,{action:'claim'});toast('Assigned to you and accepted. This job is now in My work.');return;}
+    if(action==='reassign-project'){const p=findProject(id);if(!p?.assignmentActions?.reassign||readonly())throw new Error('This job cannot be reassigned.');modal('Reassign job',reassignmentForm(p,state.designers));return;}
     if(action==='delete-project'){
       const p=findProject(id);if(!p||!canDelete(p))throw new Error('Your account cannot delete this job.');
       modal('Move job to Deleted',`<p><strong>${e(p.id)} · ${e(p.title)}</strong></p><p>This hides the job in the portal and its reports. The Smartsheet row and its files stay intact. An admin or the verified creator can restore it.</p><form id="delete-job-form" data-job="${e(p.id)}"><div class="field"><label for="delete-confirmation">Type ${e(p.id)} to confirm</label><input id="delete-confirmation" name="confirmation" required autocomplete="off"></div><div class="field"><label for="delete-reason">Reason (optional)</label><input id="delete-reason" name="reason" maxlength="500"></div><button class="button button-primary" type="submit">Confirm move to Deleted</button></form>`);return;
@@ -323,7 +327,7 @@ document.addEventListener('change',event=>{
 });
 document.addEventListener('input',event=>{if(event.target.id==='project-search'){state.query=event.target.value;updateCollection();}});
 document.addEventListener('submit',async event=>{
-  if(!['edit-form','request-form','reference-form','delete-job-form'].includes(event.target.id))return;
+  if(!['edit-form','request-form','reference-form','delete-job-form','reassign-form'].includes(event.target.id))return;
   event.preventDefault();
   try {
     if(event.target.id==='delete-job-form'){
@@ -334,6 +338,12 @@ document.addEventListener('submit',async event=>{
     }
     if(readonly())throw new Error('DEV editing is not enabled.');
     const form=event.target;
+    if(form.id==='reassign-form'){
+      const p=findProject(form.dataset.id),data=new FormData(form);
+      if(!p?.assignmentActions?.reassign)throw new Error('This job cannot be reassigned.');
+      await mutate(p.id,p=>p,{action:'reassign',designer:String(data.get('designer')||''),reason:String(data.get('reason')||'').trim(),confirmReset:data.get('confirmReset')==='on'});
+      dialog.close();toast('Reassigned. The new designer must accept the new offer.');return;
+    }
     if(form.id==='reference-form'){
       const id=form.dataset.id,p=findProject(id);if(!p||!canEdit(p))throw new Error('This project is not editable.');
       const files=[...form.elements.files.files];checkFiles(files);

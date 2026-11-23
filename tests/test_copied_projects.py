@@ -15,6 +15,7 @@ class CopiedProjectTests(unittest.TestCase):
         self.p = fixture.PilotTestCase()
         self.p.setUp()
         self.p.value['copiedRowIds'] = ['12']
+        self.p.fake.columns=[c for c in self.p.fake.columns if c['title']!='Status']
         self.p.fake.columns.append({'id': 120, 'title': 'Status', 'type': 'TEXT_NUMBER'})
         self.p.fake.bytitle['Status'] = self.p.fake.columns[-1]
         self.copied = self.p.fake.rows[1]

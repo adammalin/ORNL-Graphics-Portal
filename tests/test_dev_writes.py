@@ -13,10 +13,13 @@ from backend.dev_store import DevStore, WriteError, FIELDS, YES, NO
 
 class FakeSmartsheet:
     def __init__(self):
-        names = list(dict.fromkeys(list(FIELDS.values()) + ['DEV Test Record','Graphics Req #','Requested Designer','Designer Response','Assigned Designer','Project Stage','Completed Date']))
+        names = list(dict.fromkeys(list(FIELDS.values()) + ['DEV Test Record','Graphics Req #','Requested Designer','Designer Response','Assigned Designer','Project Stage','Completed Date','Status','Update Status','Req Assigned / Closed']))
         self.columns = [{'id':i+1,'title':n,'type':'TEXT_NUMBER'} for i,n in enumerate(names)]
         self.bytitle = {c['title']:c for c in self.columns}
         self.bytitle['Assigned Designer'].update(type='CONTACT_LIST',formula='=IF([Designer Response]@row = "Yes - I can take this job.", [Requested Designer]@row, "")',contactOptions=[{'name':'Test Designer','email':'designer@example.org'}])
+        self.bytitle['Status'].update(type='PICKLIST',options=['New','Designer Requested','Designer Accepted','CANCELED'])
+        self.bytitle['Update Status'].update(type='PICKLIST',options=['Pending','Responded'])
+        self.bytitle['Req Assigned / Closed']['type']='DATE'
         self.bytitle['Task Type'].update(type='MULTI_PICKLIST',options=['Figure/Diagram/Chart','Other'])
         self.bytitle['Priority']['options']=['Low','Normal','High','Urgent']
         self.bytitle['Graphics Req #']['systemColumnType']='AUTO_NUMBER'

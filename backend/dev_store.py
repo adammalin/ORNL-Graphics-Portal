@@ -3,18 +3,33 @@ import hashlib
 import json
 import re
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, quote
 from zoneinfo import ZoneInfo
 try:
     from backend.organizations import ORGANIZATION_FIELDS, choices as organization_choices, resolve as resolve_organization
+    from backend import assignment_history
 except ImportError:
     from organizations import ORGANIZATION_FIELDS, choices as organization_choices, resolve as resolve_organization
+    import assignment_history
 
 STAGES = ['New', 'Assigned', 'Accepted', 'In Progress', 'In Review', 'Completed', 'Archived']
 YES = 'Yes - I can take this job.'
 NO = "No - I'm not available."
+
+def allowed_stages(project):
+    stage=project['stage']
+    if stage=='Archived':
+        return ['Archived']
+    if stage=='Completed':
+        return ['Completed','Archived']
+    if project.get('response')=='accepted':
+        return ['Accepted','In Progress','In Review','Completed','Archived']
+    return [stage,'Archived'] if stage in ('New','Assigned') else ['Archived']
+
+def routing_status(stage, response):
+    return 'Designer Accepted' if response=='accepted' else 'Designer Requested' if stage=='Assigned' else 'New'
 FIELDS = {
     'title': 'Description', 'description': 'Additional Details', 'taskType': 'Task Type',
     'requestedDueDate': 'Due Date', 'finalDueDate': 'Final Due Date',
@@ -68,6 +83,7 @@ class DevStore:
         self.path.touch(mode=0o600, exist_ok=True)
         self.path.chmod(0o600)
         with self.db() as db:
+            assignment_history.initialize(db)
             db.execute('CREATE TABLE IF NOT EXISTS rows (sheet TEXT, row_id TEXT, PRIMARY KEY(sheet,row_id))')
             db.execute('CREATE TABLE IF NOT EXISTS operations (sheet TEXT, key TEXT, fingerprint TEXT, state TEXT, result TEXT, PRIMARY KEY(sheet,key))')
             extra = [r[0] for r in db.execute('SELECT row_id FROM rows WHERE sheet=?', (reader.sheet_id,))]
@@ -91,7 +107,7 @@ class DevStore:
         if sheet.get('accessLevel') not in ('OWNER', 'ADMIN', 'EDITOR', 'EDITOR_SHARE'):
             raise WriteError('This API account does not have DEV editing access.', 403)
         columns = {c['title']: c for c in sheet['columns']}
-        required = set(FIELDS.values()) | {'DEV Test Record', 'Graphics Req #', 'Requested Designer', 'Designer Response', 'Assigned Designer', 'Project Stage', 'Completed Date'}
+        required = set(FIELDS.values()) | {'DEV Test Record', 'Graphics Req #', 'Requested Designer', 'Designer Response', 'Assigned Designer', 'Project Stage', 'Completed Date', 'Status', 'Update Status', 'Req Assigned / Closed'}
         if not required.issubset(columns):
             raise WriteError('The DEV field mapping changed. Saving is stopped.', 409)
         if columns['Assigned Designer'].get('formula') != '=IF([Designer Response]@row = "Yes - I can take this job.", [Requested Designer]@row, "")':
@@ -107,6 +123,36 @@ class DevStore:
         elif schema != self.initial_schema or rule_state != self.initial_rules:
             raise WriteError('DEV columns or workflow configuration changed. Restart after reviewing the mapping.', 409)
         return columns
+
+    def assignment_actor(self):
+        return {'id':'local-dev','name':'Local DEV operator'}
+
+    def assignment_details(self, project):
+        with self.db() as db:
+            return assignment_history.details(db,self.reader.sheet_id,project)
+
+    def assignment_values(self, columns, values, project=None, row=None, *, action='create'):
+        response=values.get('Designer Response',None)
+        response=('accepted' if response==YES else 'declined' if response==NO else '') if 'Designer Response' in values else (project or {}).get('response','')
+        stage=values.get('Project Stage',(project or {}).get('stage','New'))
+        status=routing_status(stage,response)
+        if status not in columns['Status'].get('options',[]) or not {'Pending','Responded'}.issubset(columns['Update Status'].get('options',[])):
+            raise WriteError('The native routing-status choices changed. Assignment saving is paused.',409)
+        if action=='stage' and (project or {}).get('nativeStatus') not in ('',None,'New','Designer Requested','Designer Accepted'):
+            # A production-stage change must not erase a legacy editing/cancel/close status.
+            status=project['nativeStatus']
+        else:
+            values.update({'Status':status,'Update Status':'Responded' if response else 'Pending' if stage=='Assigned' else None})
+        if response=='accepted' and action in ('create','accept','claim'):
+            assigned=next((c.get('value') for c in (row or {}).get('cells',[]) if c['columnId']==columns['Req Assigned / Closed']['id']),None)
+            if not assigned:
+                values['Req Assigned / Closed']=datetime.now(ZoneInfo('America/New_York')).date().isoformat()
+        return {'requestedDesigner':values.get('Requested Designer',(project or {}).get('requestedDesigner','')),
+                'response':response,'stage':stage,'nativeStatus':status}
+
+    def record_assignment(self, key, project, action, after, reason=''):
+        with self.db() as db:
+            assignment_history.prepare(db,self.reader.sheet_id,key,project,action,after,self.assignment_actor(),datetime.now(timezone.utc).isoformat(),reason)
 
     def metadata(self):
         columns = {c['title']: c for c in self.reader.sheet['columns']}
@@ -239,11 +285,12 @@ class DevStore:
             if row_id:
                 db.execute('INSERT OR IGNORE INTO rows VALUES (?,?)', (self.reader.sheet_id, str(row_id)))
             db.execute('UPDATE operations SET state=?,result=? WHERE sheet=? AND key=?', ('done', json.dumps(result), self.reader.sheet_id, key))
+            assignment_history.confirm(db,self.reader.sheet_id,key,result,row_id)
 
     def perform(self, key, body, job_id=None, *, source_current=False, self_assign_to=None):
         if not isinstance(body, dict):
             raise WriteError('Invalid save request.')
-        if self_assign_to is not None and job_id is not None:
+        if self_assign_to is not None and job_id is not None and body.get('action')!='claim':
             raise WriteError('Self-assignment is only available when creating a job.')
         # Preserve legacy receipts for ordinary intake. Include the server-verified
         # assignee in new receipts so a changed checkbox cannot replay other intent.
@@ -290,8 +337,10 @@ class DevStore:
                 if self_assign_to:
                     values.update({'Requested Designer':self_assign_to,
                                    'Designer Response':YES,'Project Stage':'Accepted'})
+                after=self.assignment_values(columns,values)
                 payload = [{'toBottom': True, 'cells': self.cells(columns, values)}]
                 self.begin(key, fingerprint)
+                self.record_assignment(key,None,'create-self-assigned' if self_assign_to else 'create',after)
                 response = self._write('POST', f'/sheets/{self.reader.sheet_id}/rows', payload, 'new-dev-request')
                 row = response['result'][0]
                 row_id = str(row['id'])
@@ -306,7 +355,7 @@ class DevStore:
                 # This was just read back by permanent row ID; do not load it twice.
                 return {**result, 'createdRowId':row_id}
             else:
-                if set(body) - {'action', 'revision', 'fields', 'stage', 'designer'}:
+                if set(body) - {'action', 'revision', 'fields', 'stage', 'designer', 'reason', 'confirmReset'}:
                     raise WriteError('Unknown save parameter.')
                 row = self.row(job_id, body.get('revision', ''))
                 project = next(p for p in self.reader._cache['projects'] if p['id'] == job_id)
@@ -319,25 +368,42 @@ class DevStore:
                     if project['response'] == 'accepted' or project['stage'] in ('Completed', 'Archived'):
                         raise WriteError('Offer a new, unassigned active request.', 409)
                     values = {'Requested Designer': text(body['designer'], 'Designer', True), 'Designer Response': None, 'Project Stage': 'Assigned'}
+                    if project['stage']=='Assigned' and not project['response'] and project['requestedDesigner']==values['Requested Designer']:
+                        raise WriteError('This designer already has the current offer. Its offer date was kept.',409)
+                elif action == 'reassign' and set(body)=={'action','revision','designer','reason','confirmReset'}:
+                    if project['response']!='accepted' or project['stage'] in ('Completed','Archived') or body['confirmReset'] is not True:
+                        raise WriteError('Reassignment requires an active accepted job and explicit acceptance reset.',409)
+                    designer=text(body['designer'],'Designer',True)
+                    if designer==project['requestedDesigner']:
+                        raise WriteError('Choose a different designer for reassignment.',409)
+                    text(body['reason'],'Reassignment reason',True)
+                    values={'Requested Designer':designer,'Designer Response':None,'Project Stage':'Assigned'}
+                elif action=='claim' and set(body)=={'action','revision'}:
+                    if not self_assign_to or project['stage']!='New' or project['response']=='accepted' or (project['requestedDesigner'] and project['response']!='declined'):
+                        raise WriteError('Only an available, unassigned request can be claimed.',409)
+                    values={'Requested Designer':self_assign_to,'Designer Response':YES,'Project Stage':'Accepted'}
                 elif action in ('accept', 'decline') and set(body) == {'action', 'revision'}:
                     if not project['requestedDesigner'] or project['response'] == 'accepted' or project['stage'] != 'Assigned':
                         raise WriteError('This job does not have a pending designer offer.', 409)
                     values = {'Designer Response': YES if action == 'accept' else NO, 'Project Stage': 'Accepted' if action == 'accept' else 'New'}
                 elif action == 'stage' and set(body) == {'action', 'revision', 'stage'}:
                     stage = body['stage']
-                    if stage not in STAGES:
-                        raise WriteError('Choose a valid project stage.')
+                    if stage not in allowed_stages(project):
+                        raise WriteError('This stage would conflict with the assignment. Use the offer or reassignment action instead.',409)
                     if stage == 'Assigned' and not project['requestedDesigner']:
                         raise WriteError('Offer the request to a designer first.')
                     if stage in ('Accepted', 'In Progress', 'In Review', 'Completed') and project['response'] != 'accepted':
                         raise WriteError('Record designer acceptance before starting work.')
                     values = {'Project Stage': stage}
-                    if stage in ('Completed', 'Archived') and not project['completedDate']:
+                    if stage=='Completed' and not project['completedDate']:
                         values['Completed Date'] = datetime.now(ZoneInfo('America/New_York')).date().isoformat()
                 else:
                     raise WriteError('Unknown or malformed project action.')
+                after=self.assignment_values(columns,values,project,row,action=action) if action!='edit' else None
                 payload = [{'id': row['id'], 'cells': self.cells(columns, values, row)}]
                 self.begin(key, fingerprint)
+                if after:
+                    self.record_assignment(key,project,action,after,body.get('reason',''))
                 self._write('PUT', f'/sheets/{self.reader.sheet_id}/rows', payload, 'dev-job-' + action)
                 self.touched.setdefault(str(row['id']), set()).update(values)
                 self.finish(key, {'jobId': job_id})

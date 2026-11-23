@@ -126,6 +126,12 @@ class PilotConfig:
             return False
         try:
             reviewed = utc_time(review.get('reviewedAt', ''))
+            if 'validUntil' in review:
+                until = utc_time(review['validUntil'])
+                # A completed native review can cover the explicitly approved
+                # pilot window. Never carry it into another renewal automatically.
+                return (reviewed <= time.time() < until <= self.expires
+                        and 0 < until - reviewed <= 7 * 86400 + 60)
         except WriteError:
             return False
         return 0 <= time.time() - reviewed < 24 * 3600

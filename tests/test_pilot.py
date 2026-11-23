@@ -279,6 +279,32 @@ class PilotTests(PilotTestCase):
         with self.assertRaises(WriteError): PilotConfig(invalid)
         self.assertEqual(PilotConfig({**self.value, 'publicOrigin': self.origin + ':443'}).origin, self.origin)
 
+    def test_explicit_review_window_survives_a_day_but_native_checks_still_block(self):
+        coord,_=self.login('coord')
+        self.value['workflowReview'].update(
+            reviewedAt=(datetime.now(timezone.utc)-timedelta(days=2)).isoformat(),
+            validUntil=self.value['expiresAt'])
+        self.assertTrue(self.get(coord,'/api/projects').get_json()['canCreate'])
+        self.fake.rules[0]['enabled']=True
+        body={'fields':{'title':'Fictional request','description':'Test only','taskType':'Other'}}
+        self.assertEqual(self.write(coord,'/api/projects',body).status_code,409)
+        self.assertFalse([c for c in self.fake.calls if c[0]!='GET'])
+
+    def test_review_window_is_bounded_and_rejects_expired_or_unknown_attestation(self):
+        now=datetime.now(timezone.utc)
+        good={'allNativeWorkflowsChecked':True,'reviewedAt':now.isoformat(),
+              'validUntil':self.value['expiresAt']}
+        self.assertTrue(PilotConfig({**self.value,'workflowReview':good}).workflow_review_valid())
+        for changes in [
+                {'validUntil':(now-timedelta(minutes=1)).isoformat()},
+                {'validUntil':(now+timedelta(days=2)).isoformat()},
+                {'reviewedAt':(now-timedelta(days=8)).isoformat()},
+                {'reviewedAt':(now+timedelta(minutes=1)).isoformat()},
+                {'validUntil':'2026-12-01T12:00:00'},
+                {'validUntil':None},{'allNativeWorkflowsChecked':False}]:
+            with self.subTest(changes=changes):
+                self.assertFalse(PilotConfig({**self.value,'workflowReview':{**good,**changes}}).workflow_review_valid())
+
     def test_launcher_retries_empty_secret_without_echoing_it(self):
         from backend.pilot import main
         config_path = Path(self.tmp.name) / 'config.json'

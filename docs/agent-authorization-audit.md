@@ -1,3 +1,5 @@
+> November 23 pilot renewal: the manual automation review may now cover the approved testing window, capped at seven days and the pilot expiration. Per-write native automation checks remain mandatory. See [pilot setup](pilot.md). References below to the 24-hour review describe the earlier policy.
+
 # User, agent and job-ownership security audit
 
 Date: November 18, 2026. Scope: the private DEV Graphics Portal, its browser/API adapters, job service, AI-context/draft routes, reports, references, optional requester integration and local deployment. This is a bounded engineering assessment with adversarial fixtures, not independent penetration-test certification or a qualification of unrelated MCP connections.

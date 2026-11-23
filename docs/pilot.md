@@ -53,12 +53,13 @@ Before enabling saves, inspect **all** workflows in the native DEV sheet UI. Sma
   "writesEnabled": true,
   "workflowReview": {
     "allNativeWorkflowsChecked": true,
-    "reviewedAt": "REPLACE_WITH_CURRENT_TIMEZONE_AWARE_ISO_TIMESTAMP"
+    "reviewedAt": "REPLACE_WITH_CURRENT_TIMEZONE_AWARE_ISO_TIMESTAMP",
+    "validUntil": "REPLACE_WITH_PILOT_EXPIRATION_WITHIN_7_DAYS_OF_REVIEW"
   }
 }
 ```
 
-The review expires after 24 hours and automatically pauses saves. Every new write also checks the native DEV filter, assignment formula, schema, API-visible disabled automation rules, row locks, current revision and the signed-in user's write access. If Smartsheet refuses an account's workflow inspection, that account's write fails closed; do not substitute an owner token. Review the account/access requirement before inviting testers.
+An explicit `validUntil` keeps the completed native review valid through the approved testing window, capped at the pilot expiration and seven days from review. Renewing the pilot requires a fresh native review; extending `expiresAt` alone does not extend it. Older configs without `validUntil` retain the 24-hour pause. Every new write still checks the native DEV filter, assignment formula, schema, API-visible disabled automation rules, row locks, current revision and the signed-in user's write access. If Smartsheet refuses an account's workflow inspection, that account's write fails closed; do not substitute an owner token. Review the account/access requirement before inviting testers.
 
 ## Access and behavior
 
@@ -93,7 +94,7 @@ Keep the outer tunnel authenticated. A tenant access rule admits the Microsoft o
 
 Keep two Terminal windows open when running the pilot yourself: `./start-pilot-tunnel.command` hosts the existing tunnel, and `./start-pilot.command` starts the backend using Keychain on macOS. The tunnel helper needs `tunnelId` in the private config. Do not start a second host while the existing one is running. The backend launcher checks its port before accessing credentials and explains how to reuse or stop an existing process.
 
-Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. Stop the tunnel host as well when testing is over. Retain the private SQLite file, configuration and Keychain item; the launcher retrieves the saved App secret on restart. This does not persist user OAuth sessions: users reconnect and can see Smartsheet consent on each fresh authorization, including after restart, explicit sign-out, idle expiry or maximum session expiry. Normal navigation/refresh in a valid session does not reauthorize. Secure per-user token/session persistence and refresh would be a separate change, not part of saving the App secret. Review native workflows again before re-enabling writes after the review expires. The laptop must stay awake, online and connected as required for the pilot link to work.
+Ctrl+C in the pilot terminal stops the backend and clears in-memory sessions. Stop the tunnel host as well when testing is over. Retain the private SQLite file, configuration and Keychain item; the launcher retrieves the saved App secret on restart. This does not persist user OAuth sessions: users reconnect and can see Smartsheet consent on each fresh authorization, including after restart, explicit sign-out, idle expiry or maximum session expiry. Normal navigation/refresh in a valid session does not reauthorize. Secure per-user token/session persistence and refresh would be a separate change, not part of saving the App secret. Review native workflows again when renewing the testing window or when their configuration changes. The laptop must stay awake, online and connected as required for the pilot link to work.
 
 ## References
 

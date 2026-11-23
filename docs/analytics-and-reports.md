@@ -38,7 +38,7 @@ All views/downloads identify the **DEV sample**: permitted test jobs plus explic
 
 Directorate, division/program, impact level/category, justification, impact statement, intended outcome, observed outcome, evidence URL and reporting disposition are stored in private SQLite sidecar tables keyed by sheet ID and permanent native row ID. The original Smartsheet fields, formulas, attachments, native dashboards, workflows, sharing and schema are not changed. Labels are manually entered; coordinators should use consistent names to avoid split categories.
 
-Only coordinators/admins with current access to the source and current permission to edit the job can change these reporting fields. Existing write-enable, access-level and 24-hour workflow-review safeguards still apply. Only admins may annotate selected copied rows; ordinary staff/coordinators retain copied-row protection. Source revisions and metadata versions prevent stale updates. An existing reporting tag is not automatically synchronized into a native Smartsheet column. Back up the private SQLite database to retain it.
+Only coordinators/admins with current access to the source and current permission to edit the job can change these reporting fields. Existing write-enable, access-level and configured workflow-review safeguards still apply. Only admins may annotate selected copied rows; ordinary staff/coordinators retain copied-row protection. Source revisions and metadata versions prevent stale updates. An existing reporting tag is not automatically synchronized into a native Smartsheet column. Back up the private SQLite database to retain it.
 
 ## Download behavior
 

@@ -39,3 +39,26 @@ class SheetComparisonTests(unittest.TestCase):
         text=html_report(r)
         self.assertNotIn('<script>',text);self.assertIn('&lt;script&gt;',text)
         self.assertEqual(r['unkeyedRows']['live'],[3])
+
+    def test_blank_dev_identity_does_not_absorb_a_new_live_project(self):
+        r=compare(export([['G_1','New live client project','New',False]]),
+                  export([['G_1',None,None,None]]))
+        self.assertEqual(len(r['jobNumberCollisions']),1)
+        self.assertEqual(r['matchedJobs'],[]);self.assertEqual(r['fillCandidates'],[])
+
+    def test_clone_created_timestamp_is_not_an_editable_business_conflict(self):
+        r=compare(export([['G_1','A','New',False,'2026-07-01']],['Req Received']),
+                  export([['G_1','A','New',False,'2026-11-04']],['Req Received']))
+        self.assertEqual(r['conflicts'],[])
+        self.assertEqual(r['calculatedDifferences'][0]['field'],'Req Received')
+
+    def test_comments_use_native_export_row_references_and_keep_duplicates(self):
+        live=export([['G_1','A','New',False],['G_2','B','New',False]])
+        live['sheets'].append({'name':'Comments','rows':[['Row 2','Note','Author','Date'],['Row 2','Note','Author','Date'],['Row 99','Unknown','Author','Date']]})
+        dev=export([['G_1','A','New',False],['G_2','[DEV DEMO] Different','New',True]])
+        dev['sheets'].append({'name':'Comments','rows':[['Row 2','Note','Author','Date']]})
+        r=compare(live,dev)
+        self.assertEqual(r['summary']['commentsMissingFromDev'],1)
+        self.assertEqual(r['comments']['missingFromDev'][0]['job'],'G_2')
+        self.assertTrue(r['comments']['missingFromDev'][0]['targetBlocked'])
+        self.assertEqual(r['comments']['liveUnmappedExportRows'],[3])

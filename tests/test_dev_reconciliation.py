@@ -11,6 +11,7 @@ from test_pilot import PilotTestCase
 from scripts.compare_smartsheet_exports import compare
 from backend.dev_reconciliation import DevReconciliation,NativeClient,row_fields,cell_value
 from backend.dev_store import WriteError
+from backend.server import GatewayError
 
 
 class DevReconciliationTests(PilotTestCase):
@@ -166,3 +167,15 @@ class DevReconciliationTests(PilotTestCase):
             tool=self.reconciler();tool.apply()
         self.assertEqual(len(self.target_threads),1)
         self.assertFalse([c for c in self.native_calls if c[0]=='POST' and '/discussions' in c[1]])
+
+    def test_only_transient_copied_read_validation_is_retried(self):
+        with patch.object(NativeClient,'pace'):
+            tool=self.reconciler()
+            store=tool.context.reader.store
+            real=store.validate_source
+            transient=GatewayError('The DEV source changed while loading copied projects. Refresh before continuing.')
+            with patch.object(store,'validate_source',side_effect=[transient,real()]) as check,patch('backend.dev_reconciliation.time.sleep'):
+                tool.guard();self.assertEqual(check.call_count,2)
+            with patch.object(store,'validate_source',side_effect=GatewayError('Different failure')) as check,self.assertRaises(GatewayError):tool.guard()
+            self.assertEqual(check.call_count,1)
+        self.assertFalse([c for c in self.native_calls if c[0]!='GET'])

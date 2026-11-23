@@ -19,6 +19,10 @@ The operator must first compare saved native exports and obtain approval for the
 
 Receipts are recorded before requests. Updates can be recognized by exact native value readback. A new row is identified by its source provenance marker; a comment by its unique source-comment marker. An uncertain create is never blindly repeated. If readback cannot resolve it, the import pauses for inspection. Completed updates that subsequently changed are not replayed.
 
+A specific filtered/copied-row version mismatch during read validation receives up to three brief read-only retries. All access, schema, automation and source-version checks still run, and upstream writes are never retried by this mechanism. Other validation errors pause immediately.
+
+While a plan and its owner's session remain valid, a paused worker can resume without restarting the server: inspect its saved receipts and native readback, then write the canonical JSON SHA-256 digest of the unchanged plan to a host-local `RETRY` file beside it. The worker consumes that file, removes the old `APPLY` file and performs a fresh preflight. Inspect and arm the new prepared digest as usual. This is a host-only action, not a browser/API operation; it cannot renew an expired session, plan or pilot grant.
+
 Never erase receipts, start a second ledger for the same import, or expand an approved report to bypass a conflict. A changed source version or newly changed DEV value requires inspection. Preserve partial results and receipts, and reconcile actual native state before resuming.
 
 The tool supports only DEV row add/update and add-only discussions/comments. It cannot delete rows, modify columns, upload files, change sharing or send messages. It does not reconcile attachment files or native original creation dates, and it does not enable automations.

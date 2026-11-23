@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 from urllib.request import Request
 
 from backend.dev_store import WriteError
+from backend.server import GatewayError
 from scripts.compare_smartsheet_exports import normalized, is_dev
 
 
@@ -117,7 +118,17 @@ class DevReconciliation:
         if context.principal.user_id!=str(self.plan['ownerId']) or not context.principal.is_admin:
             raise WriteError('This one-shot import belongs to its verified admin owner.',403)
         context.reader.store.require_writes()
-        context.reader.store.validate_source()
+        for attempt in range(4):
+            try:
+                context.reader.store.validate_source()
+                break
+            except GatewayError as error:
+                # Native formula recalculation can advance the sheet version between
+                # the filtered and copied-row GETs. Retry only that failed read;
+                # never retry an upstream write or suppress a permission check.
+                if str(error)!='The DEV source changed while loading copied projects. Refresh before continuing.' or attempt==3:
+                    raise
+                time.sleep(.5*(attempt+1))
         current=self.client.get('/sheets/'+self.source+'/version')
         if current.get('version')!=self.source_version:
             raise WriteError('The live source changed after preparation. Import paused before the next write.',409)
@@ -394,20 +405,32 @@ class DevReconciliation:
             self.running=True
         def work():
             try:
-                with self.runtime.sheet_lock:self.prepare(sid)
-                # Host-only arming: browser/agent API callers cannot submit an arbitrary plan.
-                while time.time()<self.expires:
-                    arm=self.directory/'APPLY'
-                    if arm.exists():
-                        if arm.read_text().strip()!=self.prepared_digest:raise WriteError('The host approval digest does not match the prepared import.',409)
-                        with self.runtime.sheet_lock:self.apply()
-                        return
-                    time.sleep(1)
-                raise WriteError('The local reconciliation grant expired before apply.',403)
-            except Exception as error:
-                self.status('paused',error=str(error))
-                save_json(self.directory/'diagnostic.json',{'traceback':traceback.format_exc()})
-                if hasattr(self,'client'):save_json(self.directory/'request-audit.json',self.client.requests)
+                while time.time()<self.expires and self.path.exists():
+                    try:
+                        with self.runtime.sheet_lock:self.prepare(sid)
+                        # Host-only arming: browser callers cannot submit arbitrary plans.
+                        while time.time()<self.expires and self.path.exists():
+                            arm=self.directory/'APPLY'
+                            if arm.exists():
+                                if arm.read_text().strip()!=self.prepared_digest:raise WriteError('The host approval digest does not match the prepared import.',409)
+                                with self.runtime.sheet_lock:self.apply()
+                                return
+                            time.sleep(1)
+                        raise WriteError('The local reconciliation grant expired before apply.',403)
+                    except Exception as error:
+                        self.status('paused',error=str(error))
+                        save_json(self.directory/'diagnostic.json',{'traceback':traceback.format_exc()})
+                        if hasattr(self,'client'):save_json(self.directory/('request-audit-'+str(time.time_ns())+'.json'),self.client.requests)
+                        # A pause never repeats writes automatically. The host must
+                        # inspect the receipts and explicitly request a fresh preflight.
+                        while time.time()<self.expires and self.path.exists():
+                            retry=self.directory/'RETRY'
+                            if retry.exists():
+                                if retry.read_text().strip()!=self.plan_digest:return
+                                retry.unlink();(self.directory/'APPLY').unlink(missing_ok=True)
+                                break
+                            time.sleep(1)
+                        else:return
             finally:
                 with self.lock:self.running=False
         threading.Thread(target=work,name='reviewed-dev-reconciliation',daemon=True).start()

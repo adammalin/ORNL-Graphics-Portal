@@ -26,7 +26,7 @@ from flask import Flask, Response, jsonify, redirect, request, send_from_directo
 
 try:
     from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
-    from backend.dev_store import WriteError
+    from backend.dev_store import WriteError, SaveRefreshError
     from backend.principals import Actor
     from backend.job_service import JobService, PilotStore
     from backend.ai_repository import migrate_private_state
@@ -37,7 +37,7 @@ try:
     from backend.onboarding import Onboarding
 except ImportError:
     from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
-    from dev_store import WriteError
+    from dev_store import WriteError, SaveRefreshError
     from principals import Actor
     from job_service import JobService, PilotStore
     from ai_repository import migrate_private_state
@@ -395,11 +395,19 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     @app.errorhandler(WriteError)
     def write_error(error):
         if request.path.startswith('/api/'):
+            if isinstance(error, SaveRefreshError):
+                return jsonify(error=str(error), saveConfirmed=True, jobId=error.job_id), error.status
             return jsonify(error=str(error)),error.status
         return login_page(str(error)),error.status
 
     @app.errorhandler(GatewayError)
     def upstream_error(error):
+        try:
+            from backend.server import RefreshUnavailable
+        except ImportError:
+            from server import RefreshUnavailable
+        if isinstance(error, RefreshUnavailable):
+            return jsonify(error='DEV data is temporarily unavailable or changing. Refresh again shortly; your sign-in has not been reset.'),503
         return jsonify(error='Smartsheet access could not be verified. Reconnect or contact the pilot owner.'),502
 
     @app.errorhandler(413)

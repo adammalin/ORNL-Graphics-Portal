@@ -1,5 +1,5 @@
 import {organizationInputs,organizationValues} from './organization-fields.js';
-import {readPortalJson,mediaType} from './http-client.js';
+import {readPortalJson,mediaType,recoverConfirmedSave} from './http-client.js';
 import {createWorkspaceSync} from './workspace-sync.js';
 import {searchSelect,mountSearchSelects,showChoiceError,uniqueChoices} from './search-select.js';
 import { STAGES, CLOSED, DESIGNERS, TASK_TYPES, assignedDesigner, isActive, myProjects, metrics, workload, moveProject, safeUrl, escapeHtml as e, filterProjects, validateRequest, daysUntil } from './domain.js';
@@ -34,7 +34,7 @@ const authenticated = config.dataMode === 'pilot';
 const connected = authenticated || ['dev-readonly','dev-write'].includes(config.dataMode);
 const state = { capabilities:null, sourceVersion:null, trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, departmentOptions:[], organizationOptions:{directorate:['Fictional Science','Fictional Operations'],division:['Research','Operations']}, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
 const live = () => state.mode === 'dev-write';
-const readonly = () => !['demo','dev-write'].includes(state.mode);
+const readonly = () => state.saveNeedsRefresh || !['demo','dev-write'].includes(state.mode);
 const person = id => state.designers.find(d => d.id === id);
 const personName = id => person(id)?.name || (id ? 'Assigned designer' : 'Not yet assigned');
 const formatDate = value => { if (!value) return 'Not set'; const d = new Date(`${value.slice(0,10)}T12:00:00`); return Number.isNaN(+d) ? 'Not set' : new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric'}).format(d); };
@@ -214,6 +214,7 @@ function render({focus=false}={}) {
   else if(path.startsWith('/submitted/'))main.innerHTML=renderSuccess(path.split('/')[2]);
   else if(path.startsWith('/projects/'))main.innerHTML=renderDetail(path.split('/')[2],path.endsWith('/references'));
   else main.innerHTML=notFound();
+  if(state.saveNeedsRefresh)main.insertAdjacentHTML('afterbegin','<div class="notice notice-warning" role="status"><strong>Your changes were saved to DEV Smartsheet.</strong> Refreshed data is still pending. Use Refresh DEV data before making another change. Do not submit another request. Any files not yet uploaded can be added from the saved job.</div>');
   document.title=`${main.querySelector('h1')?.innerText.replace(/\s+/g,' ').trim() || 'Workspace'} · ORNL Graphics Portal`;
   if(authenticated&&path==='/new'&&state.actor){for(const [id,value] of [['requestor',state.actor.name],['email',state.actor.id]]){const input=document.getElementById(id);if(input){input.value=value;input.readOnly=true;}}}
   if(state.aiModule&&path.startsWith('/projects/')){const job=findProject(path.split('/')[2]);if(job&&!job.readOnly)state.aiModule.mount({root:document.querySelector('#ai-panel'),job,csrf:state.csrf});}
@@ -224,18 +225,19 @@ function updateCollection() { const type=route().slice(1);const target=document.
 function applyWorkspace(data) {
   if(!['dev-readonly','dev-write'].includes(data.mode)||!Array.isArray(data.projects))throw new Error('Unexpected DEV response.');
   if(authenticated){if(!data.actor?.id)throw new Error('The pilot session could not be verified.');state.actor=data.actor;state.person=data.actor.id;state.csrf=data.csrf;state.canCreate=!!data.canCreate;state.teamWorkload=data.teamWorkload||null;}
-  state.sourceVersion=data.sourceVersion??null;state.capabilities=data.capabilities||state.capabilities;state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.departmentOptions=data.departmentOptions||[];state.organizationOptions=data.organizationOptions||{};state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
+  state.saveNeedsRefresh=false;state.sourceVersion=data.sourceVersion??null;state.capabilities=data.capabilities||state.capabilities;state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.departmentOptions=data.departmentOptions||[];state.organizationOptions=data.organizationOptions||{};state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
 }
 async function api(path, {method='GET',body,key,headers={}}={}) {
   if(config.apiBase!=='/api')throw new Error('The local gateway configuration is invalid.');
-  const response=await fetch((path.startsWith('/auth/')?'':'/api')+path,{method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':state.csrf||config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)});
-  return readPortalJson(response);
+  const options={method,credentials:'same-origin',cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Portal-CSRF':state.csrf||config.csrf,'Idempotency-Key':key||crypto.randomUUID(),...headers},body:body===undefined?undefined:body instanceof File?body:JSON.stringify(body)};
+  const send=async()=>readPortalJson(await fetch((path.startsWith('/auth/')?'':'/api')+path,options));
+  return method==='GET'?send():recoverConfirmedSave(send);
 }
 async function busy(task) {
   if(state.saving)throw new Error('A save is already in progress.');
   workspaceSync.invalidate();setSyncStatus('saving');state.saving=true;main.setAttribute('aria-busy','true');
   document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=true);
-  try{const result=await task();setSyncStatus('synced');syncChannel?.postMessage('changed');return result;}catch(error){setSyncStatus('error',error);throw error;}finally{state.saving=false;main.setAttribute('aria-busy','false');document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=false);}
+  try{const result=await task();setSyncStatus('synced');syncChannel?.postMessage('changed');return result;}catch(error){if(error.saveConfirmed){state.saveNeedsRefresh=true;if(dialog.open)dialog.close();if([401,403].includes(error.status)){state.projects=[];state.designers=[];state.mode='error';state.error=error.message;}render();}setSyncStatus(error.saveConfirmed?'saved-pending':'error',error);throw error;}finally{state.saving=false;main.setAttribute('aria-busy','false');document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=false);}
 }
 async function mutate(id, updater, change) {
   if(readonly())throw new Error('This DEV connection is read-only.');
@@ -298,7 +300,7 @@ document.addEventListener('click',async event=>{
 
     if(action==='reload'){location.reload();return;}
     if(action==='sign-out'){await api('/auth/logout',{method:'POST',body:{}});location.href='/';return;}
-    if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');if(route()==='/new'||dialog.open)throw new Error('Finish or leave the form before refreshing. Your entries have been kept.');if(authenticated)await workspaceSync.check({force:true});else{applyWorkspace(await api('/projects?refresh=1'));render();setSyncStatus('synced');}return;}
+    if(action==='refresh-workspace'){if(state.saving)throw new Error('Wait for the current save to finish.');if(state.saveNeedsRefresh){applyWorkspace(await api('/projects?refresh=1'));if(route()==='/new')location.hash='#/projects';render();setSyncStatus('synced');return;}if(route()==='/new'||dialog.open)throw new Error('Finish or leave the form before refreshing. Your entries have been kept.');if(authenticated)await workspaceSync.check({force:true});else{applyWorkspace(await api('/projects?refresh=1'));render();setSyncStatus('synced');}return;}
     if(action==='reset-demo'){if(state.mode!=='demo'||authenticated)return;for(const f of state.files.values())URL.revokeObjectURL(f.url);state.files.clear();state.projects=demoProjects();dialog.close();if(route()!=='/')location.hash='#/';else render();toast('Synthetic workspace reset.');return;}
     if(action==='board-view'||action==='list-view'){state.view=action==='board-view'?'board':'list';render();return;}
     if(action==='show-designer'){state.query='';state.filterStage='';state.filterDesigner=button.dataset.person;state.lastWorkspace='projects';location.hash='#/projects';return;}
@@ -400,8 +402,8 @@ const syncElement=document.createElement('span');syncElement.id='workspace-sync'
 let lastSyncAt=null;
 function setSyncStatus(kind,error){
   if(!connected)return;syncElement.dataset.status=kind;
-  syncElement.textContent=kind==='saving'?'Saving to Smartsheet…':kind==='checking'?'Checking for updates…':kind==='paused'?'Sync paused while editing':kind==='error'?'Sync needs attention':'Synced '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}).format(lastSyncAt=new Date());
-  syncElement.title=kind==='error'?(error?.message||'Refresh to retry.'):'Updates are checked while this tab is active.';
+  syncElement.textContent=kind==='saved-pending'?'Saved · refresh needed':kind==='saving'?'Saving to Smartsheet…':kind==='checking'?'Checking for updates…':kind==='paused'?'Sync paused while editing':kind==='error'?'Sync needs attention':'Synced '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}).format(lastSyncAt=new Date());
+  syncElement.title=['error','saved-pending'].includes(kind)?(error?.message||'Refresh to retry.'):'Updates are checked while this tab is active.';
 }
 function canSync(){return authenticated&&!document.hidden&&!state.saving&&!['loading','error'].includes(state.mode)&&!['/new','/reports','/deleted'].includes(route())&&!dialog.open&&!document.querySelector('#tutorial-dialog[open],.choice-toggle[aria-expanded="true"],#ai-panel :focus')&&!main.querySelector('[data-sync-dirty]');}
 for(const eventName of ['input','change'])main.addEventListener(eventName,event=>{

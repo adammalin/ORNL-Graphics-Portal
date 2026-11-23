@@ -8,6 +8,7 @@ import getpass
 import hmac
 import http.cookies
 import json
+import logging
 import mimetypes
 import math
 import os
@@ -38,6 +39,12 @@ except ImportError:
 
 class GatewayError(Exception):
     pass
+
+class RefreshUnavailable(GatewayError):
+    """A transient read or an inconsistent pair of native sheet snapshots."""
+    def __init__(self, message, reason='upstream-temporary'):
+        super().__init__(message)
+        self.reason = reason
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
@@ -166,13 +173,34 @@ class SmartsheetReader:
                 if len(raw) > 10 * 1024 * 1024:
                     raise GatewayError('DEV response exceeded the pilot size limit.')
                 return json.loads(raw)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        except HTTPError as error:
+            if error.code in (429, 500, 502, 503, 504):
+                raise RefreshUnavailable('The DEV data service is temporarily unavailable.') from None
+            raise GatewayError('Smartsheet could not be read. Check the token and DEV access.') from None
+        except (URLError, TimeoutError):
+            raise RefreshUnavailable('The DEV data service is temporarily unavailable.') from None
+        except json.JSONDecodeError:
             raise GatewayError('Smartsheet could not be read. Check the token and DEV access.') from None
 
     def projects(self, force=False):
         with self._lock:
             if not force and self._cache is not None and time.monotonic() - self._cache_time < 15:
                 return self._cache
+            started = time.monotonic()
+            for attempt in range(3):
+                try:
+                    return self._load_projects()
+                except RefreshUnavailable as error:
+                    # Retry complete reads only. Never mix snapshots or replay a write.
+                    if attempt == 2 or time.monotonic() - started > 8:
+                        raise
+                    self.audit.append({'method':'GET', 'resource':'dev-workspace-read-retry', 'reason':error.reason})
+                    logging.getLogger(__name__).warning('Retrying DEV workspace read: %s (%s/2).', error.reason, attempt + 1)
+
+    def _load_projects(self):
+        # Publish row selection, native data and cache only after a complete read.
+        with self._lock:
+            row_ids = self.row_ids
             params = {'include': 'attachments,objectValue', 'level': 2}
             if self.filter_id:
                 saved_filter = self._get_json(f'/sheets/{self.sheet_id}/filters/{self.filter_id}', 'dev-filter-check')
@@ -189,18 +217,19 @@ class SmartsheetReader:
                 marker = next((c['id'] for c in sheet.get('columns', []) if c.get('title') == 'DEV Test Record'), None)
                 if not marker or criteria[0].get('columnId') != marker:
                     raise GatewayError('The native filter is not restricted to DEV Test Record.')
-                self.row_ids = frozenset(str(row['id']) for row in sheet.get('rows', []) if any(c.get('columnId') == marker and c.get('value') is True for c in row.get('cells', [])))
-            projects, designers = normalize_sheet(sheet, self.sheet_id, self.row_ids)
+                row_ids = frozenset(str(row['id']) for row in sheet.get('rows', []) if any(c.get('columnId') == marker and c.get('value') is True for c in row.get('cells', [])))
+            projects, designers = normalize_sheet(sheet, self.sheet_id, row_ids)
             # The independent read selection never joins the native write allowlist.
             if self.copied_row_ids:
-                self.row_ids = self.row_ids - self.copied_row_ids
+                row_ids = row_ids - self.copied_row_ids
                 selected = self._get_json(f'/sheets/{self.sheet_id}?' + urlencode({
                     'rowIds': ','.join(sorted(self.copied_row_ids)),
                     'include': 'attachments,objectValue', 'level': 2}), 'selected-copied-dev-rows')
-                if (selected.get('version') != sheet.get('version')
-                        or selected.get('columns') != sheet.get('columns')
+                if (selected.get('columns') != sheet.get('columns')
                         or selected.get('accessLevel') != sheet.get('accessLevel')):
-                    raise GatewayError('The DEV source changed while loading copied projects. Refresh before continuing.')
+                    raise GatewayError('The DEV schema or access changed while loading copied projects.')
+                if selected.get('version') != sheet.get('version'):
+                    raise RefreshUnavailable('The DEV sheet changed during refresh. Please refresh again shortly.', 'snapshot-version-changed')
                 copied, copied_designers = normalize_sheet(selected, self.sheet_id, frozenset(), self.copied_row_ids)
                 projects = [p for p in projects if p['_rowId'] not in self.copied_row_ids] + copied
                 if len({p['id'] for p in projects}) != len(projects):
@@ -208,6 +237,7 @@ class SmartsheetReader:
                 designers = list({p['id']: p for p in designers + copied_designers}.values())
                 sheet = {**sheet, 'rows': [r for r in sheet['rows'] if str(r['id']) not in self.copied_row_ids]
                          + [r for r in selected.get('rows', []) if str(r.get('id')) in self.copied_row_ids]}
+            self.row_ids = row_ids
             self.sheet = sheet
             self.version = sheet.get('version')
             if self.initial_version is None:

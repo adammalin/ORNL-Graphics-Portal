@@ -14,11 +14,11 @@ import time
 from datetime import datetime, timezone
 
 try:
-    from backend.dev_store import DevStore, WriteError
+    from backend.dev_store import DevStore, WriteError, SaveRefreshError
     from backend.principals import Principal
     from backend.server import GatewayError, MAX_FILE_BYTES
 except ImportError:
-    from dev_store import DevStore, WriteError
+    from dev_store import DevStore, WriteError, SaveRefreshError
     from principals import Principal
     from server import GatewayError, MAX_FILE_BYTES
 
@@ -137,9 +137,14 @@ class JobService:
 
     def _creator(self, job, principal, row_id):
         with self.runtime.db() as db:
-            return bool(db.execute(
-                'SELECT 1 FROM job_ownership WHERE sheet_id=? AND row_id=? AND job_id=? AND user_id=?',
-                (self.runtime.config.sheet_id, row_id, job, principal.user_id)).fetchone())
+            # Acknowledged creates may initially lack the generated job number.
+            # Bind it once, only from an allowed native row and its original owner.
+            owned=db.execute('SELECT job_id FROM job_ownership WHERE sheet_id=? AND row_id=? AND user_id=?',
+                (self.runtime.config.sheet_id,row_id,principal.user_id)).fetchone()
+            if owned and owned[0]=='':
+                db.execute('UPDATE job_ownership SET job_id=? WHERE sheet_id=? AND row_id=? AND job_id=? AND user_id=?',
+                    (job,self.runtime.config.sheet_id,row_id,'',principal.user_id))
+            return bool(owned and owned[0] in ('',job))
 
     def _can_read(self, principal, project):
         return (principal.can_coordinate
@@ -390,6 +395,18 @@ class JobService:
                 self.runtime.audit(principal, 'create-self-assigned' if self_assign_to else body.get('action', 'create'), saved_job, 'success')
                 context = self._resolve(session_id)
                 return {**self._workspace(context, result), 'jobId': saved_job}
+            except SaveRefreshError as error:
+                if job_id is None and error.created_row_id:
+                    # Preserve creator rights from the acknowledged native row,
+                    # even when later workspace reads are temporarily unavailable.
+                    with self.runtime.db() as db:
+                        if error.job_id:
+                            db.execute('INSERT OR IGNORE INTO creators VALUES (?,?,?)',
+                                (reader.sheet_id, error.job_id, principal.user_id))
+                        db.execute('INSERT OR IGNORE INTO job_ownership VALUES (?,?,?,?,?)',
+                            (reader.sheet_id,error.created_row_id,error.job_id or '',principal.user_id,datetime.now(timezone.utc).isoformat()))
+                self.runtime.audit(principal, body.get('action', 'create'), error.job_id or job_id or '', 'saved-refresh-pending')
+                raise
             except (WriteError, GatewayError):
                 self.runtime.audit(principal, body.get('action', 'create'), job_id or '', 'unconfirmed')
                 raise

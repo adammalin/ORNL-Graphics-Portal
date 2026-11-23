@@ -107,7 +107,7 @@ Limits: 20 new attempts per Microsoft principal per sheet per day; up to 10 refe
 
 1. IT supplies the registered application's client ID, approved eligibility policy and secret, and resolves any tenant consent restrictions.
 2. Owner approves the dedicated integration account/token and pins its ID privately.
-3. Prepare a supported Python/OpenSSL runtime, update private config, review native workflows again if the 24-hour review has expired, and restart the pilot with local secret entry.
+3. Prepare a supported Python/OpenSSL runtime, update private config, review native workflows again if the configured review window has expired, and restart the pilot with local secret entry.
 4. Verify a real employee without Smartsheet access can authenticate, receives correct name/mail/department, submits one fictional request and adds a test reference.
 5. Verify the generated job and reference on the actual DEV source and in the coordinator workspace, then test the existing offer/accept flow with a real designer.
 6. Verify rejected Guest/wrong-tenant/ineligible identities, independent sign-outs and a second person's real sign-in.

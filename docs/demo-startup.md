@@ -16,7 +16,7 @@ Run the same setup script after intentionally rotating the App secret, changing 
 2. If the tunnel Terminal is already hosting, leave it running. Otherwise double-click `start-pilot-tunnel.command`. Complete its Microsoft sign-in if requested. Keep that Terminal open; use its printed **Hosting port** HTTPS address.
 3. If the server Terminal already says **Authenticated pilot ready**, reuse it. Otherwise double-click `start-pilot.command`. It loads the App ID and Keychain secret automatically. Leave that Terminal open. If port 4175 is occupied, reuse the existing server or stop it with Ctrl+C before relaunching; the launcher does not kill another process.
 4. Open the configured HTTPS pilot link. Complete the outer Microsoft tunnel login and the invited Smartsheet account login as needed. Review **Allow** when Smartsheet requests consent.
-5. Before a demo involving saves, verify the native DEV workflow review is less than 24 hours old, pilot/tunnel access have not expired and a synthetic job can be read/saved. The launcher reports when saves are paused. Review the workflows properly; do not change the timestamp merely to bypass the gate. Access expiry renewal is a separate scoped action.
+5. Before a demo involving saves, verify the native DEV workflow review is valid through the current pilot window, pilot/tunnel access have not expired and a synthetic job can be read/saved. The launcher reports when saves are paused. Review the workflows properly; do not change the timestamp merely to bypass the gate. Access expiry renewal is a separate scoped action.
 
 The GitHub Pages site is a fictional demo and does not save to the DEV sheet. Use the tunnel link for actual DEV jobs. Do not tunnel the shared-token local editor on port 4174. Do not start a second backend/tunnel while the existing one is in use.
 
@@ -37,7 +37,7 @@ Press Ctrl+C in the backend Terminal, then in the tunnel Terminal when the demo 
 | Keychain locked/denied | Unlock the login Keychain and retry; setup does not overwrite an item after denial. |
 | Wrong secret / invalid client | Reopen the existing app details, confirm the client ID, then rerun credential setup with the current App secret. |
 | Tunnel unavailable | Check the tunnel Terminal, network, Microsoft authentication and access expiration. |
-| Board works but saves are paused | Check the 24-hour native workflow review, writes switch and your own DEV sheet permissions. |
+| Board works but saves are paused | Check the configured native workflow-review window, writes switch and your own DEV sheet permissions. |
 | Pilot expired | Arrange an authorized renewal of app and tunnel access; the launcher never extends them automatically. |
 | You see fictional DEMO jobs | Open the private tunnel link instead of GitHub Pages. |
 

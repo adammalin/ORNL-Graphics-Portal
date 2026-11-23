@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import copy
 import hashlib
+import importlib
 import json
 from pathlib import Path
 import re
@@ -48,12 +49,17 @@ def single(index,job):
     return matches[0]
 
 
+class NativeRejected(WriteError):
+    """A definite HTTP 400 rejection, distinct from an uncertain write timeout."""
+
+
 class NativeClient:
     """Independent lowest-level boundary: the live sheet has GET access only."""
-    def __init__(self,reader,source,target,guard):
+    def __init__(self,reader,source,target,guard,directory=None):
         if source==target or not all(re.fullmatch(r'\d+',x) for x in (source,target)):
             raise WriteError('Distinct numeric live and DEV sheet IDs are required.',503)
         self.reader,self.source,self.target,self.guard=reader,source,target,guard
+        self.directory=Path(directory) if directory else None
         self.requests=[];self.last=0
 
     def pace(self):
@@ -81,7 +87,12 @@ class NativeClient:
         try:
             with self.reader._opener.open(req,timeout=40) as response:result=json.load(response)
         except HTTPError as error:
-            raise WriteError('Native DEV import rejected (HTTP '+str(error.code)+'). Review the private receipt before retrying.',502) from None
+            if self.directory:
+                try:details=json.loads(error.read(262144))
+                except (ValueError,OSError):details={}
+                save_json(self.directory/'native-error.json',{'status':error.code,**{k:details[k] for k in ('errorCode','message','refId','detail') if k in details}})
+            exception=NativeRejected if error.code==400 else WriteError
+            raise exception('Native DEV import rejected (HTTP '+str(error.code)+'). Review the private receipt before retrying.',502) from None
         except (URLError,TimeoutError,ValueError):
             raise WriteError('Native DEV outcome is uncertain. Readback is required; the write was not repeated.',502) from None
         if result.get('resultCode')!=0 or 'result' not in result:
@@ -147,7 +158,7 @@ class DevReconciliation:
         self.sid=sid;self.context=self.runtime.jobs._fresh(sid)
         if self.context.principal.user_id!=str(self.plan['ownerId']) or not self.context.principal.is_admin:
             raise WriteError('This one-shot import belongs to its verified admin owner.',403)
-        self.client=NativeClient(self.context.reader,self.source,self.target,self.guard)
+        self.client=NativeClient(self.context.reader,self.source,self.target,self.guard,self.directory)
         source=self.snapshot(self.source);target=self.snapshot(self.target)
         if source.get('name')!=self.plan['sourceName'] or target.get('name')!='DEV Graphics Assignments':
             raise WriteError('Sheet names do not match the approved source and DEV copy.',409)
@@ -160,6 +171,9 @@ class DevReconciliation:
         src,dev=indexed(source),indexed(target)
         columns={c['title']:c for c in target['columns']}
         self.source_before,self.dev_before=source,target
+        snapshot_id=str(time.time_ns())
+        save_json(self.directory/('source-preflight-'+snapshot_id+'.json'),source)
+        save_json(self.directory/('dev-preflight-'+snapshot_id+'.json'),target)
         self.source_discussions=self.discussions(self.source);self.dev_discussions=self.discussions(self.target)
         # Backups include all native DEV rows and discussion text, not just portal-selected rows.
         for name,value in [('source-before.json',source),('dev-before.json',target),
@@ -262,8 +276,15 @@ class DevReconciliation:
         out={'columnId':column['id'],'strict':True}
         obj=cell.get('objectValue')
         if not isinstance(obj,dict):obj=None
-        if obj and obj.get('objectType')=='CONTACT':
-            out['objectValue']={k:v for k,v in obj.items() if k in ('objectType','email','name')}
+        if column.get('type')=='CONTACT_LIST':
+            value=(obj or {}).get('email') or cell.get('value')
+            out['value']=value
+            name=cell.get('displayValue') or (obj or {}).get('name')
+            if name:out['displayValue']=name
+            if value and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',str(value)):
+                if column.get('validation'):raise WriteError('A copied contact cannot satisfy current native validation.',409)
+                # Retain an existing free-form contact as text, as the source does.
+                out['strict']=False
         elif obj and obj.get('objectType') in ('MULTI_PICKLIST','MULTI_CONTACT'):
             out['objectValue']=copy.deepcopy(obj)
         else:out['value']=cell.get('value')
@@ -308,7 +329,10 @@ class DevReconciliation:
                 if found:row_id=str(found[0]['id'])
                 elif state=='pending':raise WriteError('Uncertain create has no readback yet. It was not repeated.',409)
                 else:
-                    response=self.client.write('POST','/sheets/'+self.target+'/rows',[{'toBottom':True,'cells':op['cells']}])
+                    try:response=self.client.write('POST','/sheets/'+self.target+'/rows',[{'toBottom':True,'cells':op['cells']}])
+                    except NativeRejected:
+                        with self.db() as db:db.execute('UPDATE operations SET state=? WHERE key=?',('rejected',key))
+                        raise
                     row_id=str(response['result'][0]['id'])
                 self.finish(key,{'targetRow':row_id})
             row=self.client.get('/sheets/'+self.target+'/rows/'+row_id+'?include=objectValue')
@@ -376,6 +400,8 @@ class DevReconciliation:
                     if b['objectType']=='CONTACT':same=bool(a) and a.get('email','').lower()==b.get('email','').lower()
                     else:same=bool(a) and a.get('objectType')==b.get('objectType') and a.get('values')==b.get('values')
                 else:same=actual.get('value')==requested.get('value')
+                if same and requested.get('displayValue'):
+                    same=actual.get('displayValue')==requested['displayValue']
                 if not same:raise WriteError('An imported row did not retain a requested native value.',409)
         discussions_after=self.discussions(self.target);all_comments=defaultdict(list)
         existing_comments={str(c['id']):c for t in self.dev_discussions for c in t.get('comments',[])}
@@ -428,6 +454,10 @@ class DevReconciliation:
                             if retry.exists():
                                 if retry.read_text().strip()!=self.plan_digest:return
                                 retry.unlink();(self.directory/'APPLY').unlink(missing_ok=True)
+                                # Only the local host can request a retry. Reload this
+                                # installed maintenance module so parser fixes preserve
+                                # the existing OAuth session; no path comes from a client.
+                                self.__class__=importlib.reload(importlib.import_module(__name__)).DevReconciliation
                                 break
                             time.sleep(1)
                         else:return

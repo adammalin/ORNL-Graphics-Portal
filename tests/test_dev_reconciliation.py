@@ -158,6 +158,14 @@ class DevReconciliationTests(PilotTestCase):
             self.assertEqual(cell_value(cell),value)
             self.assertEqual(DevReconciliation.copy_cell(cell,{'id':2})['value'],value)
 
+    def test_contacts_use_write_representation_and_preserve_freeform_values(self):
+        column={'id':2,'type':'CONTACT_LIST'}
+        cell={'value':'person@example.org','displayValue':'Person','objectValue':{'objectType':'CONTACT','email':'person@example.org','name':'Person'}}
+        copied=DevReconciliation.copy_cell(cell,column)
+        self.assertEqual(copied,{'columnId':2,'strict':True,'value':'person@example.org','displayValue':'Person'})
+        self.assertEqual(DevReconciliation.copy_cell({'value':'Existing freeform owner'},column)['strict'],False)
+        with self.assertRaises(WriteError):DevReconciliation.copy_cell({'value':'Invalid new contact'},{**column,'validation':True})
+
     def test_existing_native_history_is_preserved_without_duplicate_import(self):
         self.target_threads=copy.deepcopy(self.source_threads)
         self.target_threads[0]['parentId']=12;self.target_threads[0]['id']=800

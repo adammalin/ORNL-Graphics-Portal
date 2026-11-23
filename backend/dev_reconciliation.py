@@ -21,6 +21,32 @@ from scripts.compare_smartsheet_exports import normalized, is_dev
 
 
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+def logical_operation(value):
+    """Compare approved cell intent across equivalent native wire encodings."""
+    out=copy.deepcopy(value)
+    for cell in out.get('cells',[]):
+        cell.pop('strict',None)
+        obj=cell.get('objectValue')
+        if isinstance(obj,dict) and obj.get('objectType')=='CONTACT':
+            cell.pop('objectValue');cell['value']=obj.get('email')
+            if obj.get('name'):cell['displayValue']=obj['name']
+        if cell.get('displayValue')==cell.get('value'):cell.pop('displayValue',None)
+    return out
+
+def upgrade_ledger(directory):
+    """Retain old request bodies so completed receipts survive encoding fixes."""
+    directory=Path(directory)
+    with sqlite3.connect(directory/'receipts.sqlite3') as db:
+        if 'payload_json' not in {r[1] for r in db.execute('PRAGMA table_info(operations)')}:
+            db.execute('ALTER TABLE operations ADD COLUMN payload_json TEXT')
+        for path in [directory/'prepared.json',*directory.glob('after-*-prepared.json')]:
+            if not path.exists():continue
+            data=json.loads(path.read_text())
+            for kind,key_field in [('updates','targetRow'),('creates','sourceRow'),('comments','sourceComment')]:
+                prefix={'updates':'update','creates':'create','comments':'comment'}[kind]
+                for op in data.get(kind,[]):
+                    db.execute('UPDATE operations SET payload_json=? WHERE key=? AND payload_hash=? AND payload_json IS NULL',
+                               (json.dumps(op),prefix+':'+op[key_field],digest(op)))
 def stamp():return datetime.now(timezone.utc).isoformat()
 def save_json(path,value):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -117,6 +143,7 @@ class DevReconciliation:
         self.report_hash=digest(self.report)
         with self.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS operations (key TEXT PRIMARY KEY,payload_hash TEXT,state TEXT,result TEXT)')
+        upgrade_ledger(self.directory)
         self.db_path.chmod(0o600)
 
     def db(self):return sqlite3.connect(self.db_path,timeout=15)
@@ -155,6 +182,7 @@ class DevReconciliation:
         return result['data']
 
     def prepare(self,sid):
+        upgrade_ledger(self.directory)
         self.sid=sid;self.context=self.runtime.jobs._fresh(sid)
         if self.context.principal.user_id!=str(self.plan['ownerId']) or not self.context.principal.is_admin:
             raise WriteError('This one-shot import belongs to its verified admin owner.',403)
@@ -293,11 +321,15 @@ class DevReconciliation:
     def receipt(self,key,payload):
         fingerprint=digest(payload)
         with self.db() as db:
-            saved=db.execute('SELECT payload_hash,state,result FROM operations WHERE key=?',(key,)).fetchone()
+            saved=db.execute('SELECT payload_hash,state,result,payload_json FROM operations WHERE key=?',(key,)).fetchone()
             if saved:
-                if saved[0]!=fingerprint:raise WriteError('The durable import receipt belongs to different content.',409)
+                if saved[0]!=fingerprint:
+                    if not saved[3] or logical_operation(json.loads(saved[3]))!=logical_operation(payload):
+                        raise WriteError('The durable import receipt belongs to different content.',409)
+                    if saved[1]!='done':
+                        db.execute('UPDATE operations SET payload_hash=?,payload_json=? WHERE key=?',(fingerprint,json.dumps(payload),key))
                 return saved[1],json.loads(saved[2]) if saved[2] else None
-            db.execute('INSERT INTO operations VALUES (?,?,?,NULL)',(key,fingerprint,'pending'))
+            db.execute('INSERT INTO operations (key,payload_hash,state,result,payload_json) VALUES (?,?,?,NULL,?)',(key,fingerprint,'pending',json.dumps(payload)))
         return 'new',None
 
     def finish(self,key,result):

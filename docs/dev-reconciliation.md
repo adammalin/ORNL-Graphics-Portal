@@ -25,6 +25,8 @@ While a plan and its owner's session remain valid, a paused worker can resume wi
 
 The host-only retry reloads the installed maintenance module, allowing a tested native-format correction without discarding the active OAuth session. It accepts no module path from a browser or plan. Normal startup has no worker. Native rejection details are retained only in private storage; definite HTTP 400 row-create failures are distinguished from uncertain timeouts. If a representation fix changes a receipt fingerprint, preserve its old fingerprint and the rejection evidence, verify native readback, and explicitly reconcile that failed receipt before retrying. Never alter a completed receipt to replay it.
 
+Private receipts retain their request bodies. Canonical comparison permits only equivalent contact wire encodings and parsing flags, while retaining column IDs, raw values, contact names and all other operation content. A completed receipt retains its original fingerprint and destination and is never replayed because of an equivalent encoding change. Changed logical values still stop the operation.
+
 Never erase receipts, start a second ledger for the same import, or expand an approved report to bypass a conflict. A changed source version or newly changed DEV value requires inspection. Preserve partial results and receipts, and reconcile actual native state before resuming.
 
 The tool supports only DEV row add/update and add-only discussions/comments. It cannot delete rows, modify columns, upload files, change sharing or send messages. It does not reconcile attachment files or native original creation dates, and it does not enable automations.

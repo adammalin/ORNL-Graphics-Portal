@@ -166,6 +166,16 @@ class DevReconciliationTests(PilotTestCase):
         self.assertEqual(DevReconciliation.copy_cell({'value':'Existing freeform owner'},column)['strict'],False)
         with self.assertRaises(WriteError):DevReconciliation.copy_cell({'value':'Invalid new contact'},{**column,'validation':True})
 
+    def test_equivalent_contact_encoding_does_not_replay_completed_receipt(self):
+        with patch.object(NativeClient,'pace'):
+            tool=self.reconciler()
+            old={'sourceRow':'101','cells':[{'columnId':5,'strict':True,'objectValue':{'objectType':'CONTACT','email':'person@example.org','name':'Person'}}]}
+            tool.receipt('create:encoding',old);tool.finish('create:encoding',{'targetRow':'55'})
+            new={'sourceRow':'101','cells':[{'columnId':5,'strict':True,'value':'person@example.org','displayValue':'Person'}]}
+            self.assertEqual(tool.receipt('create:encoding',new),('done',{'targetRow':'55'}))
+            new['cells'][0]['value']='different@example.org'
+            with self.assertRaises(WriteError):tool.receipt('create:encoding',new)
+
     def test_existing_native_history_is_preserved_without_duplicate_import(self):
         self.target_threads=copy.deepcopy(self.source_threads)
         self.target_threads[0]['parentId']=12;self.target_threads[0]['id']=800

@@ -55,6 +55,7 @@ def qa_metrics():return jsonify(synthetic=True,rows=len(p.fake.rows),writeCalls=
 @p.app.after_request
 def qa_simulation_banner(response):
     if response.mimetype=='text/html':
+        response.direct_passthrough=False
         html=response.get_data(as_text=True)
         html=re.sub(r'(<body\b[^>]*>)', r'\1<div class="mode-banner"><strong>ISOLATED WORKFLOW SIMULATION</strong> — Fictional sign-ins, records and calendar. No real Microsoft, Smartsheet or email connection.</div>', html, count=1)
         response.set_data(html)

@@ -19,12 +19,14 @@ try:
     from backend.principals import Actor
     from backend.server import NoRedirect
     from backend.requester_tracking import RequestTracking
+    from backend.guided_intake import policy as guided_policy, normalize as guided_fields, EXTRA_FIELDS
 except ImportError:
     from dev_store import WriteError, revision
     from job_service import PilotStore, KEY, WRITABLE_ACCESS
     from principals import Actor
     from server import NoRedirect
     from requester_tracking import RequestTracking
+    from guided_intake import policy as guided_policy, normalize as guided_fields, EXTRA_FIELDS
 
 COOKIE = '__Host-graphics_requester'
 LOGIN_COOKIE = '__Host-graphics_microsoft_login'
@@ -244,11 +246,14 @@ class IntakeService:
             self.session(sid)
         actor = session.actor
         cfg = self.active()
+        guided = guided_policy(cfg)
         return {'name': actor.name, 'email': actor.email, 'department': actor.department,
                 'csrf': session.csrf, 'organizationOptions': data.get('organizationOptions', {}), 'departmentOptions': data.get('departmentOptions', []), 'taskTypes': data['taskTypes'],
                 'taskTypeMultiple': data['taskTypeMultiple'],
+                'guidedIntake': guided,
                 'canSubmit': bool(cfg.writes and cfg.workflow_review_valid()
-                                  and self.reader.sheet.get('accessLevel') in WRITABLE_ACCESS)}
+                                  and self.reader.sheet.get('accessLevel') in WRITABLE_ACCESS
+                                  and (not guided or guided['ready']))}
 
     def guard(self, sid, actor):
         if self.session(sid).actor != actor:
@@ -301,14 +306,16 @@ class IntakeService:
         if not isinstance(body, dict) or set(body) != {'fields'} or not isinstance(body['fields'], dict):
             raise WriteError('Invalid intake fields.')
         fields = body['fields']
-        if set(fields) - ALLOWED_FIELDS:
+        if set(fields) - (ALLOWED_FIELDS | EXTRA_FIELDS):
             raise WriteError('Unknown intake field.')
-        body = {'fields': {**fields, 'requestor': actor.name, 'email': actor.email}}
+        fields = {**fields, 'requestor': actor.name, 'email': actor.email}
         with self.runtime.sheet_lock:
             self.guard(sid, actor)
             with self.runtime.db() as db:
                 row = db.execute('SELECT receipt FROM employee_intake_receipts WHERE owner=? AND key=? AND sheet=?',
                                  (actor.key, hashed, self.reader.sheet_id)).fetchone()
+                native, snapshot = guided_fields(fields, self.active(), check_date=not bool(row))
+                body = {'fields': native}
                 if row:
                     receipt = row[0]
                 else:
@@ -329,7 +336,7 @@ class IntakeService:
                     db.execute('UPDATE employee_intake_receipts SET job=?,title=COALESCE(title,?) WHERE receipt=? AND owner=?',
                                (result['jobId'], project['title'], receipt, actor.key))
                     db.execute('INSERT OR IGNORE INTO employee_request_snapshots VALUES (?,?,?)',
-                               (receipt,project['_rowId'],json.dumps(body['fields'])))
+                               (receipt,project['_rowId'],json.dumps(snapshot)))
                 self.audit(actor, 'create', receipt, 'success')
                 return self.receipt(sid, receipt)
             except Exception:

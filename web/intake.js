@@ -1,6 +1,7 @@
 import {organizationInputs} from './organization-fields.js';
 import {readPortalJson} from './http-client.js';
 import {searchSelect,mountSearchSelects,showChoiceError} from './search-select.js';
+import {mountGuidedIntake} from './guided-intake.js';
 /* Authenticated employee form. This module never calls Smartsheet directly. */
 const main = document.querySelector('#main');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -43,6 +44,27 @@ function render() {
 function success() {
   main.innerHTML = `<section class="success-panel"><div class="eyebrow">Request received</div><h1>Thanks, ${esc(session.name)}.</h1><p>Your request <strong>${esc(saved.jobId)}</strong> has been received.</p><p>${esc(saved.title)}</p><p>Creative Services will review your details and follow up with you.</p>${saved.attachments.length?`<h2>Reference files received</h2><ul>${saved.attachments.map(f=>`<li>${esc(f.name)}</li>`).join('')}</ul>`:''}<div class="page-actions"><a class="button button-primary" href="/my-requests#/requests/${encodeURIComponent(saved.receipt)}">View my request</a><a class="button" href="/request">Submit another request</a></div></section>`;
   main.focus();
+}
+async function submitGuided(fields, files, status) {
+  if(busy)return;
+  if(!submission){
+    const allowed=new Set(['image/png','image/jpeg','image/webp','application/pdf','text/plain']);
+    if(files.length>10||files.some(file=>!allowed.has(file.type)||!file.size||file.size>30*1024*1024)){
+      const error=new Error('Choose up to 10 PNG, JPEG, WebP, PDF or plain text files, 30 MB each.');error.status=400;throw error;
+    }
+    submission={key:key(),fields};pendingFiles=files.map(file=>({file,key:key(),done:false}));
+  }
+  busy=true;
+  try{
+    if(!saved){status('Submitting your DEV request…');saved=await api('requests',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':submission.key},body:JSON.stringify({fields:submission.fields})});}
+    else saved=await api('requests/'+encodeURIComponent(saved.receipt));
+    for(const item of pendingFiles.filter(f=>!f.done)){
+      status(`Request ${saved.jobId} received. Uploading ${item.file.name}…`);
+      saved=await api('requests/'+encodeURIComponent(saved.receipt)+'/attachments',{method:'POST',headers:{'Idempotency-Key':item.key,'X-Filename':encodeURIComponent(item.file.name),'X-Project-Revision':saved.revision,'Content-Type':item.file.type},body:item.file});item.done=true;
+    }
+    success();
+  }catch(error){if(!saved&&error.status===400)submission=null;if(saved){error.requestSaved=true;error.message=`Request ${saved.jobId} is saved. ${error.message} Continue the same submission to finish its references.`;}throw error;}
+  finally{busy=false;}
 }
 async function submit(event) {
   event.preventDefault();
@@ -105,6 +127,8 @@ document.querySelector('#requester-help').addEventListener('click',async()=>{try
 mountSearchSelects();
 try {
   session=await api('session');
-  if(location.pathname==='/my-requests'){const module=await import('./requester.js');await module.mountRequester({main,api,session});}else render();
+  if(location.pathname==='/my-requests'){const module=await import('./requester.js');await module.mountRequester({main,api,session});}
+  else if(session.guidedIntake?.enabled)mountGuidedIntake({main,session,refreshSession:async()=>{session=await api('session');return session;},onSubmit:submitGuided});
+  else render();
   try{await (await help()).initialize();}catch{/* Keep request functions available if the tutorial cannot save preferences. */}
 }catch(error){main.textContent=error.message;const link=document.createElement('a');link.href='/auth/microsoft/login';link.textContent=' Sign in with Microsoft';main.append(link);}

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "python3 backend/server.py",
     "test": "node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py'",
-    "check": "node --check web/app.js && node --check web/assignment-panel.js && node --check web/organization-fields.js && node --check web/intake.js && node --check web/ai-panel.js && node --check web/tutorial.js && node --check web/tutorial-content.js && node --check web/requester.js && node --check web/search-select.js && node --check web/workspace-sync.js && node --check web/http-client.js && node --check web/reports.js && node --check web/lifecycle.js && node scripts-check.mjs"
+    "check": "node --check web/app.js && node --check web/assignment-panel.js && node --check web/organization-fields.js && node --check web/intake.js && node --check web/ai-panel.js && node --check web/tutorial.js && node --check web/tutorial-content.js && node --check web/requester.js && node --check web/search-select.js && node --check web/workspace-sync.js && node --check web/http-client.js && node --check web/reports.js && node --check web/lifecycle.js && node --check web/guided-intake.js && node --check web/business-days.js && node scripts-check.mjs"
   },
-  "engines": { "node": ">=22", "python": ">=3.10" }
+  "engines": {
+    "node": ">=22",
+    "python": ">=3.10"
+  }
 }

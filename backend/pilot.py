@@ -687,8 +687,8 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'organization-fields.js','assignment-panel.js','app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js'}
-        if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.')):
+        allowed = {'organization-fields.js','assignment-panel.js','app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js','guided-intake.js','guided-intake.css','business-days.js'}
+        if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.','assets/intake/')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)
 

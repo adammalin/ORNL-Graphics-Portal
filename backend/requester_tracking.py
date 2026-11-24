@@ -15,7 +15,8 @@ STAGES = {
     'Archived': ('completed','Completed',5),
 }
 ORIGINAL_FIELDS = ('description','deliverables','audience','specifications','requestorGroup',
-                   'notes','taskType','dueDate','reference1','reference2')
+                   'notes','taskType','dueDate','reference1','reference2',
+                   'additionalServices','serviceDetails','eventDate')
 
 
 def timestamp(value):

@@ -1,3 +1,4 @@
+import {dueError} from './business-days.js';
 import {organizationInputs,organizationValues} from './organization-fields.js';
 import {assignmentPanel,reassignmentForm} from './assignment-panel.js';
 import {readPortalJson,mediaType,recoverConfirmedSave} from './http-client.js';
@@ -33,7 +34,7 @@ const dialog = document.querySelector('#dialog');
 const config = window.PORTAL_CONFIG || { dataMode:'demo' };
 const authenticated = config.dataMode === 'pilot';
 const connected = authenticated || ['dev-readonly','dev-write'].includes(config.dataMode);
-const state = { capabilities:null, sourceVersion:null, trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, departmentOptions:[], organizationOptions:{directorate:['Fictional Science','Fictional Operations'],division:['Research','Operations']}, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
+const state = { staffIntake:null, capabilities:null, sourceVersion:null, trackingAvailable:false, aiModule:null, actor:null, csrf:null, canCreate:false, teamWorkload:null, departmentOptions:[], organizationOptions:{directorate:['Fictional Science','Fictional Operations'],division:['Research','Operations']}, taskTypes:TASK_TYPES, taskTypeMultiple:false, priorities:['Normal','High'], saving:false, requestKey:crypto.randomUUID(), mode:connected ? 'loading' : 'demo', projects:connected?[]:demoProjects(), designers:connected?[]:DESIGNERS, person:connected?'coordinator':'alex', view:'board', query:'', filterDesigner:'', filterStage:'', filterSource:'all', lastWorkspace:'my-work', error:'', files:new Map(), dragged:null };
 const live = () => state.mode === 'dev-write';
 const readonly = () => state.saveNeedsRefresh || !['demo','dev-write'].includes(state.mode);
 const person = id => state.designers.find(d => d.id === id);
@@ -156,7 +157,7 @@ function renderNew() {
     <div class="form-layout"><form id="request-form" class="request-form" novalidate>
       <fieldset class="form-section"><legend><span>01</span>The project</legend><div class="form-grid">
         ${field('title','Project title',{required:true,full:true,help:'A short, descriptive name for the work.'})}
-        ${searchSelect('taskType','Type of work',{required:true,options:state.taskTypes,multiple:state.taskTypeMultiple})}${field('dueDate','Requested due date',{type:'date'})}
+        ${searchSelect('taskType','Type of work',{required:true,options:state.taskTypes,multiple:state.taskTypeMultiple})}${field('dueDate','Requested due date',{type:'date',required:!!state.staffIntake})}${authenticated&&state.staffIntake?`<div class="field full"><p class="quiet-note">Minimum notice: two business days. Earliest: <strong>${e(state.staffIntake.earliest||'Calendar review needed')}</strong>.<br>${e(state.staffIntake.calendarLabel||state.staffIntake.message)}</p>${state.staffIntake.canOverride?'<label class="self-assignment"><input type="checkbox" name="overrideLeadTime" id="override-lead-time"><strong>Override two-business-day minimum</strong></label><small>Graphics staff only. An open day today or later is still required. The override is recorded with your verified identity.</small>':''}</div>`:''}
         ${field('description','Project details',{required:true,full:true,rows:true,help:'What do you need, what should it communicate, and how will it be used?'})}
         ${field('deliverables','Deliverables and quantities',{full:true,help:'For example: one editable figure and a presentation-ready PNG.'})}
         ${field('audience','Intended audience')}${field('specifications','Dimensions / file formats')}
@@ -227,7 +228,7 @@ function render({focus=false}={}) {
 function updateCollection() { const type=route().slice(1);const target=document.querySelector('#collection-results');if(target)target.innerHTML=collectionResults(type); }
 function applyWorkspace(data) {
   if(!['dev-readonly','dev-write'].includes(data.mode)||!Array.isArray(data.projects))throw new Error('Unexpected DEV response.');
-  if(authenticated){if(!data.actor?.id)throw new Error('The pilot session could not be verified.');state.actor=data.actor;state.person=data.actor.id;state.csrf=data.csrf;state.canCreate=!!data.canCreate;state.teamWorkload=data.teamWorkload||null;}
+  if(authenticated){if(!data.actor?.id)throw new Error('The pilot session could not be verified.');state.actor=data.actor;state.person=data.actor.id;state.csrf=data.csrf;state.canCreate=!!data.canCreate;state.staffIntake=data.staffIntake||null;state.teamWorkload=data.teamWorkload||null;}
   state.saveNeedsRefresh=false;state.sourceVersion=data.sourceVersion??null;state.capabilities=data.capabilities||state.capabilities;state.projects=data.projects;state.designers=data.designers||[];state.taskTypes=data.taskTypes||TASK_TYPES;state.taskTypeMultiple=!!data.taskTypeMultiple;state.departmentOptions=data.departmentOptions||[];state.organizationOptions=data.organizationOptions||{};state.priorities=data.priorities||['Normal','High'];state.mode=data.mode;
 }
 async function api(path, {method='GET',body,key,headers={}}={}) {
@@ -361,16 +362,16 @@ document.addEventListener('submit',async event=>{
       if(!Object.keys(fields).length){dialog.close();toast('No changes to save.');return;}
       await mutate(p.id,p=>({...p,...values}),{action:'edit',fields});dialog.close();toast(live()?'Changes saved to DEV Smartsheet.':'Demo changes saved in this tab.');return;
     }
-    const data=new FormData(form),assignToMe=authenticated&&data.get('assignToMe')==='on',values=Object.fromEntries([...data.entries()].filter(([k])=>!['attachments','assignToMe'].includes(k)).map(([k,v])=>[k,String(v).trim()]));
+    const data=new FormData(form),assignToMe=authenticated&&data.get('assignToMe')==='on',overrideLeadTime=authenticated&&state.staffIntake?.canOverride===true&&data.get('overrideLeadTime')==='on',values=Object.fromEntries([...data.entries()].filter(([k])=>!['attachments','assignToMe','overrideLeadTime'].includes(k)).map(([k,v])=>[k,String(v).trim()]));
     if(state.taskTypeMultiple)values.taskType=data.getAll('taskType');
-    const errors=validateRequest(values),files=[...document.querySelector('#attachments').files];
+    const errors=validateRequest(values);if(state.staffIntake){const error=dueError(values.dueDate,state.staffIntake,{overrideMinimum:overrideLeadTime});if(error)errors.dueDate=error;}const files=[...document.querySelector('#attachments').files];
     try{checkFiles(files);}catch(error){errors.attachments=error.message;}
     form.querySelectorAll('.field-error').forEach(el=>el.textContent='');form.querySelectorAll('[aria-invalid]').forEach(el=>{el.removeAttribute('aria-invalid');el.removeAttribute('aria-describedby');});
     if(Object.keys(errors).length){for(const [key,message] of Object.entries(errors)){const error=form.querySelector(`#${key}-error`),input=form.elements.namedItem(key);if(error)error.textContent=message;if(input&&!form.querySelector(`[data-choice="${key}"]`)){input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby',`${key}-error`);}}const first=Object.keys(errors)[0];if(!showChoiceError(form,first,errors[first]))form.elements.namedItem(first)?.focus();return;}
     if(live()){
       let createdId;
       await busy(async()=>{
-        const result=await api('/projects',{method:'POST',key:state.requestKey,body:{fields:values,...(authenticated?{assignToMe}:{})}});applyWorkspace(result);createdId=result.jobId;
+        const result=await api('/projects',{method:'POST',key:state.requestKey,body:{fields:values,...(authenticated?{assignToMe,...(state.staffIntake?{overrideLeadTime}:{})}:{})}});applyWorkspace(result);createdId=result.jobId;
         // A saved request survives an attachment failure. Never repeat intake to retry a file.
         try{await uploadFiles(createdId,files);}catch(error){location.hash='#/projects/'+encodeURIComponent(createdId)+'/references';throw new Error(`Job ${createdId} was saved. Some files may need uploading from its reference section. ${error.message}`);}
       });

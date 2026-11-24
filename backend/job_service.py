@@ -4,6 +4,7 @@ The service resolves private session handles itself. It does not accept actors,
 bearer tokens, arbitrary source IDs or model-selected permissions. Future MCP
 and agent authorization adapters are intentionally not enabled in Stage 0.
 """
+from backend.guided_intake import policy as intake_policy, normalize as normalize_intake
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 import copy
@@ -273,13 +274,14 @@ class JobService:
             'taskTypes': raw.get('taskTypes', []),
             'taskTypeMultiple': raw.get('taskTypeMultiple', False),
             'priorities': raw.get('priorities', []), 'teamWorkload': counts,
+            'staffIntake': ({**intake_policy(config, staff=True), 'canOverride': writable and principal.role in ('designer','coordinator','admin')} if intake_policy(config, staff=True) else None),
             'actor': principal.public_identity(), 'canCreate': writable,
             'accessLevel': context.reader.sheet.get('accessLevel', 'VIEWER'),
         }
 
     def _policy_version(self,context):
         config=self.runtime.active_config()
-        return (context.principal,tuple(sorted(config.invites.items())),config.writes,config.workflow_review_valid(),json.dumps(config.organization_routing, sort_keys=True),self.runtime.lifecycle.epoch())
+        return (context.principal,tuple(sorted(config.invites.items())),config.writes,config.workflow_review_valid(),json.dumps(config.organization_routing, sort_keys=True),json.dumps(config.value.get('staffIntakeRules'),sort_keys=True),self.runtime.lifecycle.epoch())
 
     def workspace(self, session_id):
         with self.runtime.sheet_lock:
@@ -356,6 +358,8 @@ class JobService:
                 raise WriteError('Your Smartsheet account cannot edit this sheet.', 403)
             key = self._key(principal, key)
             self_assign_to = None
+            override_lead_time = False
+            rules_before = copy.deepcopy(self.runtime.active_config().value.get('staffIntakeRules'))
             if job_id:
                 project = self._project(context, job_id)
                 if project.get('readOnly') and not principal.is_admin:
@@ -378,20 +382,34 @@ class JobService:
                 if isinstance(body,dict) and body.get('action')=='claim':
                     self_assign_to=principal.email
             else:
-                if (not isinstance(body, dict) or set(body)-{'fields','assignToMe'}
+                if (not isinstance(body, dict) or set(body)-{'fields','assignToMe','overrideLeadTime'}
                         or not isinstance(body.get('fields'), dict)
-                        or type(body.get('assignToMe',False)) is not bool):
+                        or type(body.get('assignToMe',False)) is not bool
+                        or type(body.get('overrideLeadTime',False)) is not bool):
                     raise WriteError('Invalid intake fields.')
                 # Acceptance can only be recorded for the authenticated creator,
                 # never for a caller-supplied designer or an existing job.
                 self_assign_to = principal.email if body.get('assignToMe',False) else None
-                body = {'fields': {**body['fields'],
-                        'email': principal.email, 'requestor': principal.name}}
+                override_lead_time = body.get('overrideLeadTime', False)
+                if override_lead_time and principal.role not in ('designer','coordinator','admin'):
+                    raise WriteError('Only verified Graphics staff may override minimum lead time.',403)
+                fields = {**body['fields'], 'email': principal.email, 'requestor': principal.name}
+                if intake_policy(self.runtime.active_config(), staff=True) or override_lead_time:
+                    with reader.store.db() as db:
+                        replay = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?', (reader.sheet_id,key)).fetchone()
+                    fields,_ = normalize_intake(fields,self.runtime.active_config(),check_date=not bool(replay),staff=True,override_lead_time=override_lead_time)
+                    if override_lead_time:
+                        fields['notes'] += '\n\nLead-time minimum overridden by verified Graphics staff: '+principal.name+' ('+principal.email+').'
+                body = {'fields': fields}
             try:
                 # Do not use an authorization snapshot after queued work expires.
                 action = body.get('action') if isinstance(body, dict) else None
+                def write_guard():
+                    self._before_write(session_id, context, job_id, action)
+                    if job_id is None and rules_before != self.runtime.active_config().value.get('staffIntakeRules'):
+                        raise WriteError('Intake calendar rules changed. Refresh and review before saving.',409)
                 with reader.store.authorized_writes(
-                        lambda: self._before_write(session_id, context, job_id, action),
+                        write_guard,
                         admin_rows={project['_rowId']} if job_id and principal.is_admin else ()):
                     result = reader.store.perform(key, body, job_id, source_current=True,
                                                   self_assign_to=self_assign_to)
@@ -405,7 +423,7 @@ class JobService:
                                    (reader.sheet_id, saved_job, principal.user_id))
                         db.execute('INSERT OR IGNORE INTO job_ownership VALUES (?,?,?,?,?)',
                             (reader.sheet_id,saved['_rowId'],saved_job,principal.user_id,datetime.now(timezone.utc).isoformat()))
-                self.runtime.audit(principal, 'create-self-assigned' if self_assign_to and job_id is None else body.get('action', 'create'), saved_job, 'success')
+                self.runtime.audit(principal, 'create-lead-time-override' if override_lead_time else 'create-self-assigned' if self_assign_to and job_id is None else body.get('action', 'create'), saved_job, 'success')
                 context = self._resolve(session_id)
                 return {**self._workspace(context, result), 'jobId': saved_job}
             except SaveRefreshError as error:

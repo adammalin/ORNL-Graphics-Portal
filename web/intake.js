@@ -1,3 +1,4 @@
+import {collectClassicFields,classicRuleError,mountClassicRules} from './assets/intake/classic-rules.js';
 import {classicClientForm} from './assets/intake/classic-client-form.js';
 import {readPortalJson} from './http-client.js';
 import {mountSearchSelects,showChoiceError} from './search-select.js';
@@ -15,6 +16,7 @@ async function api(path, options = {}) {
 function render() {
   main.innerHTML = classicClientForm(session);
   if (!session.canSubmit) document.querySelector('#form-status').textContent = 'Submissions are paused. Please try again after the pilot owner completes the DEV checks.';
+  mountClassicRules(document.querySelector('#employee-request'),session);
   document.querySelector('#employee-request').addEventListener('submit', submit);
 }
 function success() {
@@ -52,8 +54,9 @@ async function submit(event) {
   if (!submission) {
     if (!form.reportValidity()) return;
     const data = new FormData(form);
-    const fields = Object.fromEntries([...data].filter(([name])=>name!=='attachments' && name!=='taskType'));
-    fields.taskType = session.taskTypeMultiple ? data.getAll('taskType') : data.get('taskType');
+    const fields = collectClassicFields(data,session);
+    const ruleError=classicRuleError(fields,session.guidedIntake,{additionalRequested:data.has('additional')});
+    if(ruleError){status.textContent=ruleError;return;}
     pendingFiles = [...form.elements.attachments.files].map(file=>({file,key:key(),done:false}));
     const allowed = new Set(['image/png','image/jpeg','image/webp','application/pdf','text/plain']);
     if (pendingFiles.length>10 || pendingFiles.some(({file})=>!allowed.has(file.type)||!file.size||file.size>30*1024*1024)) {
@@ -62,7 +65,7 @@ async function submit(event) {
     submission = {key:key(),fields};
   }
   busy=true; button.disabled=true;
-  for (const id of ['request-fields','contact-fields','reference-fields']) document.getElementById(id).disabled=true;
+  for (const id of ['request-fields','contact-fields','reference-fields','service-fields']) document.getElementById(id)?.setAttribute('disabled','');
   try {
     if (!saved) {
       status.textContent='Submitting your request…';
@@ -80,7 +83,7 @@ async function submit(event) {
       : `${error.message} Use Retry to check this same submission; do not create a second request if its outcome is unconfirmed.`;
     if (!saved && error.status===400) {
       submission=null;
-      for (const id of ['request-fields','contact-fields','reference-fields']) document.getElementById(id).disabled=false;
+      for (const id of ['request-fields','contact-fields','reference-fields','service-fields']) document.getElementById(id)?.removeAttribute('disabled');
       status.textContent=error.message;
     }
     if (error.status===401) {
@@ -104,7 +107,7 @@ mountSearchSelects();
 try {
   session=await api('session');
   if(location.pathname==='/my-requests'){const module=await import('./requester.js');await module.mountRequester({main,api,session});}
-  else if(session.guidedIntake?.enabled)mountGuidedIntake({main,session,refreshSession:async()=>{session=await api('session');return session;},onSubmit:submitGuided});
+  else if(session.guidedIntake?.enabled&&session.guidedIntake.layout!=='classic')mountGuidedIntake({main,session,refreshSession:async()=>{session=await api('session');return session;},onSubmit:submitGuided});
   else render();
   try{await (await help()).initialize();}catch{/* Keep request functions available if the tutorial cannot save preferences. */}
 }catch(error){main.textContent=error.message;const link=document.createElement('a');link.href='/auth/microsoft/login';link.textContent=' Sign in with Microsoft';main.append(link);}

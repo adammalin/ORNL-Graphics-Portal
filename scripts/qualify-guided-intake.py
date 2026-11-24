@@ -4,6 +4,7 @@ No real Microsoft/Smartsheet credentials, config, tunnel, source rows or mail.
 Uses the project's existing injected transport fixtures and private temporary DB.
 Never import this launcher into the actual pilot or expose it through a tunnel.
 """
+import copy
 import argparse
 from datetime import timedelta
 from pathlib import Path
@@ -27,6 +28,9 @@ from waitress import serve
 p=MicrosoftIntakeTests();p.setUp()
 today=today_eastern()
 p.value['guidedIntake']={'enabled':True,'calendar':{'approved':True,'label':'Fictional qualification calendar — not the approved ORNL schedule','validThrough':(today+timedelta(days=365)).isoformat(),'closedDates':['2026-11-26','2026-11-27']}}
+
+p.value['staffIntakeRules']=copy.deepcopy(p.value['guidedIntake'])
+p.value['staffIntakeRules']['calendar'].update(approved=False,testOnly=True)
 
 @p.app.get('/qa')
 def qa_home():
@@ -66,6 +70,7 @@ p.ms.claims['oid']=OTHER;p.ms.profile['id']=OTHER;p.ms.profile['displayName']='O
 other_sid=next(sid for sid in p.intake.sessions if sid!=requester_sid)
 p.ms.claims['oid']=MEMBER;p.ms.profile['id']=MEMBER
 p.runtime.config.value['guidedIntake']=p.value['guidedIntake']
+p.runtime.config.value['staffIntakeRules']=p.value['staffIntakeRules']
 p.runtime.config.origin=f'http://localhost:{args.port}'
 p.runtime.config.host='localhost';p.runtime.reload_config=None
 

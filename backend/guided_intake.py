@@ -34,13 +34,13 @@ def minimum_date(today, closed):
                 return current
     raise ValueError('No open business day.')
 
-def policy(config):
-    raw = config.value.get('guidedIntake', {})
+def policy(config, *, staff=False):
+    raw = config.value.get('staffIntakeRules' if staff else 'guidedIntake', {})
     if not isinstance(raw, dict) or raw.get('enabled') is not True:
         return None
     calendar = raw.get('calendar', {})
     try:
-        if not isinstance(calendar, dict) or calendar.get('approved') is not True:
+        if not isinstance(calendar, dict) or (calendar.get('approved') is not True and not (staff and calendar.get('testOnly') is True)):
             raise ValueError()
         closed = calendar.get('closedDates')
         if not isinstance(closed, list) or len(closed) > 800:
@@ -60,13 +60,20 @@ def policy(config):
     return {'enabled': True, 'ready': True, 'today': today.isoformat(), 'timezone': 'America/New_York',
             'earliest': earliest.isoformat(), 'closedDates': sorted(set(closed)),
             'validThrough': through.isoformat(), 'calendarLabel': label.strip(),
-            'notificationsEnabled': False,
+            'notificationsEnabled': False, 'testOnly': calendar.get('approved') is not True,
+            'layout': raw.get('layout', 'guided'),
             'services': [{'id': k, 'label': v[0], 'team': v[1], 'choices': v[2]} for k, v in SERVICES.items()]}
 
-def normalize(fields, config, check_date=True):
+def normalize(fields, config, check_date=True, *, staff=False, override_lead_time=False):
     """Return a native-compatible payload and a safe original-input snapshot."""
-    p = policy(config)
+    if set(fields) & {'overrideLeadTime', 'override', 'canOverride'}:
+        raise WriteError('Date overrides are not accepted as request fields.', 400)
+    if override_lead_time and not staff:
+        raise WriteError('Only verified Graphics staff may override minimum lead time.', 403)
+    p = policy(config, staff=staff)
     if not p:
+        if override_lead_time:
+            raise WriteError('Staff lead-time rules are not configured.', 503)
         if set(fields) & EXTRA_FIELDS:
             raise WriteError('Guided intake is not enabled.', 400)
         return dict(fields), dict(fields)
@@ -76,7 +83,9 @@ def normalize(fields, config, check_date=True):
         due = calendar_date(fields.get('dueDate'))
     except (ValueError, TypeError):
         raise WriteError('Choose a valid requested delivery date.', 400) from None
-    if check_date and due.isoformat() < p['earliest']:
+    if check_date and override_lead_time and due.isoformat() < p['today']:
+        raise WriteError('Choose today or a future date.', 400)
+    if check_date and not override_lead_time and due.isoformat() < p['earliest']:
         raise WriteError('Allow at least two business days. Earliest requested delivery: ' + p['earliest'] + '.', 400)
     if check_date and due.isoformat() > p['validThrough']:
         raise WriteError('Choose a date within the approved holiday/closure calendar, through ' + p['validThrough'] + '.', 400)

@@ -64,3 +64,12 @@ class StaffIntakeRuleTests(unittest.TestCase):
         response=self.p.ms_write(self.client,'/api/intake/requests',{'fields':fields});self.assertEqual(response.status_code,200,response.json)
         tracked=self.p.get(self.client,'/api/intake/my-requests/'+response.json['receipt']).json
         self.assertEqual(tracked['originalRequest']['serviceDetails'],fields['serviceDetails']);self.assertEqual(tracked['originalRequest']['eventDate'],'2026-12-05')
+    def test_staff_additional_services_save_with_override_and_verified_identity(self):
+        body=self.body('2026-11-24',True)
+        body['fields'].update(additionalServices=['video','reproduction','poster'],serviceDetails={'video':{'kind':'Editing','notes':'Synthetic video request'},'reproduction':{'kind':'Handouts / copies','quantity':'40','notes':'Synthetic copies'},'poster':{'kind':'36 × 48 inches','quantity':'2','notes':'Synthetic posters'}},eventDate='2026-12-05')
+        response=self.save(body);self.assertEqual(response.status_code,200,response.json)
+        project=next(p for p in response.json['projects'] if p['id']==response.json['jobId'])
+        for value in ['Video production: Editing','Quantity 40','Quantity 2','2026-12-05','Lead-time minimum overridden by verified Graphics staff: Designer Tester']:
+            self.assertIn(value,project['description'])
+        self.assertEqual(project['description'].count('Reproduction —'),1)
+        self.assertEqual(project['email'],'designer@example.org')

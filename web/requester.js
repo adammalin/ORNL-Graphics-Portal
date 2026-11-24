@@ -32,7 +32,7 @@ export function mountRequester({main,api,session}){
   }
   function details(r){
     const original=r.originalRequest||{};
-    const originalLabels={description:'Original project description',deliverables:'Deliverables and quantities',audience:'Intended audience',specifications:'Dimensions / file formats',requestorGroup:'Group / department',notes:'Notes / additional details',taskType:'Task type',dueDate:'Requested delivery as submitted',eventDate:'Event date'};
+    const originalLabels={description:'Original project description',deliverables:'Deliverables and quantities',audience:'Intended audience',specifications:'Dimensions / file formats',directorate:'Directorate',division:'Division / office / facility',requestorGroup:'Group / department',notes:'Notes / additional details',taskType:'Task type',dueDate:'Requested delivery as submitted',eventDate:'Event date'};
     const serviceLabels={photography:'Photography',video:'Video production',web:'Web',reproduction:'Reproduction / printing',poster:'Poster / large-format printing',unsure:'Coordinator help with services'};
     const additional=(Array.isArray(original.additionalServices)?original.additionalServices:[]).filter(id=>Object.hasOwn(serviceLabels,id));
     const serviceText=additional.length?`<section class="detail-section"><h2>Additional services you requested</h2>${additional.map(id=>{const d=original.serviceDetails?.[id]||{};return `<p><strong>${serviceLabels[id]}</strong><br>${e([d.kind,d.quantity?'Quantity: '+d.quantity:'',d.notes].filter(Boolean).join(' · '))}</p>`;}).join('')}<p class="quiet-note">Services are recorded for coordination; this tracker does not imply a separate team has accepted the work.</p></section>`:'';

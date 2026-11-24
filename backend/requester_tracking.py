@@ -6,7 +6,7 @@ import re
 import secrets
 
 from backend.dev_store import WriteError
-from backend.server import display
+from backend.server import display, contact
 
 STAGES = {
     'New': ('submitted','Submitted',0), 'Assigned': ('assigning','Being assigned',1),
@@ -14,7 +14,7 @@ STAGES = {
     'In Review': ('in_review','In review',4), 'Completed': ('completed','Completed',5),
     'Archived': ('completed','Completed',5),
 }
-ORIGINAL_FIELDS = ('description','deliverables','audience','specifications','requestorGroup',
+ORIGINAL_FIELDS = ('description','deliverables','audience','specifications','requestorGroup','directorate','division',
                    'notes','taskType','dueDate','reference1','reference2',
                    'additionalServices','serviceDetails','eventDate')
 
@@ -65,7 +65,18 @@ class RequestTracking:
         status,label,step = STAGES.get(project['stage'], ('submitted','Submitted',0))
         raw = next(row for row in self.intake.reader.sheet['rows'] if str(row['id'])==record[3])
         columns = {c['id']:c['title'] for c in self.intake.reader.sheet['columns']}
-        assigned = next((display(c) for c in raw['cells'] if columns.get(c['columnId'])=='Assigned Designer'), '')
+        # A current accepted offer outranks a delayed Assigned Designer formula.
+        # Show a name only when its immutable contact address matches the accepted
+        # identity selected by the same normalization used in the staff workspace.
+        assigned = ''
+        if project.get('response') == 'accepted':
+            expected = (project.get('requestedDesigner') or '').casefold()
+            for title in ('Requested Designer', 'Assigned Designer'):
+                cell = next((c for c in raw['cells'] if columns.get(c['columnId']) == title), {})
+                address, label = contact(cell)
+                if expected and address.casefold() == expected:
+                    assigned = (cell.get('objectValue') or {}).get('name') or label or address
+                    break
         result = {**base,'available':True,'status':status,'statusLabel':label,'step':step,
                   'designer':assigned if project.get('response')=='accepted' else '',
                   'requestedDueDate':project.get('requestedDueDate',''),

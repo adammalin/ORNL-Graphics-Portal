@@ -59,3 +59,5 @@ dialog{border:1px solid var(--ornl-graphite);padding:0;max-width:690px;width:cal
 
 /* Hide the workspace skeleton while its classic client demo entry mounts. */
 html:has(script[src="/intake-demos/classic/config.js"]) body:not(.requester-site){visibility:hidden}
+
+.form-grid .classic-date-notice{grid-column:1/-1;display:block;line-height:1.8}

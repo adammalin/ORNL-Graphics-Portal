@@ -15,7 +15,7 @@ export function classicClientForm(session) {
   <fieldset class="form-section" id="request-fields"><legend><span>01</span>The project</legend><div class="form-grid">
   ${field('title','Job title',{required:true,full:true})}
   ${searchSelect('taskType','Type of work',{options:session.taskTypes,multiple:session.taskTypeMultiple,required:true})}
-  ${field('dueDate','Requested due date',{type:'date',required:!!session.guidedIntake})}${session.guidedIntake?`<p class="quiet-note field full">Allow at least two business days. Earliest requested delivery: <strong>${esc(session.guidedIntake.earliest||'Calendar review needed')}</strong>. Weekends and configured holidays / closures are excluded.<br>${esc(session.guidedIntake.calendarLabel||session.guidedIntake.message)}</p>`:''}
+  ${field('dueDate','Requested due date',{type:'date',required:!!session.guidedIntake})}${session.guidedIntake?`<p class="quiet-note classic-date-notice">Allow at least two business days. Earliest requested delivery: <strong>${esc(session.guidedIntake.earliest||'Calendar review needed')}</strong>. Weekends and configured holidays / closures are excluded.<br>${esc(session.guidedIntake.calendarLabel||session.guidedIntake.message)}</p>`:''}
   ${field('description','Project description',{required:true,full:true,rows:true})}
   ${field('deliverables','Deliverables and quantities',{full:true})}
   ${field('audience','Intended audience')}${field('specifications','Dimensions / file formats')}

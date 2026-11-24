@@ -1,6 +1,6 @@
-import {organizationInputs} from './organization-fields.js';
+import {classicClientForm} from './assets/intake/classic-client-form.js';
 import {readPortalJson} from './http-client.js';
-import {searchSelect,mountSearchSelects,showChoiceError} from './search-select.js';
+import {mountSearchSelects,showChoiceError} from './search-select.js';
 import {mountGuidedIntake} from './guided-intake.js';
 /* Authenticated employee form. This module never calls Smartsheet directly. */
 const main = document.querySelector('#main');
@@ -12,32 +12,8 @@ async function api(path, options = {}) {
     headers:{...(options.method ? {'X-Portal-CSRF':session.csrf} : {}), ...options.headers}});
   return readPortalJson(response);
 }
-function field(name, label, {type='text', required=false, full=false, rows=false, value='', readonly=false}={}) {
-  return `<div class="field ${full?'full':''}"><label for="${name}">${label}${required?' *':''}</label>${rows
-    ? `<textarea id="${name}" name="${name}" maxlength="4000" ${required?'required':''}>${esc(value)}</textarea>`
-    : `<input id="${name}" name="${name}" type="${type}" maxlength="4000" value="${esc(value)}" ${required?'required':''} ${readonly?'readonly':''}>`}</div>`;
-}
 function render() {
-  main.innerHTML = `<div class="page-heading"><div><div class="eyebrow">Creative Services</div><h1>Request creative work.</h1><p>Tell us about your project. We’ll use these details to help plan the work.</p></div></div>
-  <p class="quiet-note">Signed in as ${esc(session.name)} · ${esc(session.email)}. Required fields are marked *.</p>
-  <div class="form-layout"><form id="employee-request" class="request-form">
-  <fieldset class="form-section" id="request-fields"><legend><span>01</span>The project</legend><div class="form-grid">
-  ${field('title','Job title',{required:true,full:true})}
-  ${searchSelect('taskType','Type of work',{options:session.taskTypes,multiple:session.taskTypeMultiple,required:true})}
-  ${field('dueDate','Requested due date',{type:'date'})}
-  ${field('description','Project description',{required:true,full:true,rows:true})}
-  ${field('deliverables','Deliverables and quantities',{full:true})}
-  ${field('audience','Intended audience')}${field('specifications','Dimensions / file formats')}
-  </div></fieldset>
-  <fieldset class="form-section" id="contact-fields"><legend><span>02</span>Your information</legend><div class="form-grid">
-  ${field('requestor','Your name',{value:session.name,readonly:true})}${field('email','Your email',{type:'email',value:session.email,readonly:true})}
-  ${organizationInputs(session.organizationOptions,session.departmentOptions||[],{requestorGroup:session.department||''})}<p class="quiet-note field full">If you’re unsure of your organization, leave it blank and Graphics will help coordinate.</p></div></fieldset>
-  <fieldset class="form-section" id="reference-fields"><legend><span>03</span>References and additional details</legend><div class="form-grid">
-  ${field('reference1','Reference link 1',{type:'url',full:true})}${field('reference2','Reference link 2',{type:'url',full:true})}
-  <div class="field full"><label for="attachments">Reference files</label><div class="upload-zone"><input id="attachments" name="attachments" type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"><p>Up to 10 files, 30 MB each. PNG, JPEG, WebP, PDF or plain text.</p></div></div>
-  ${field('notes','Notes / additional details',{rows:true,full:true})}</div></fieldset>
-  <div id="form-status" role="status" aria-live="polite"></div><div class="form-actions"><p>Your contact details come from Microsoft. Your request and references are sent to Creative Services.</p><button class="button button-primary" type="submit" ${session.canSubmit?'':'disabled'}>Submit request</button></div></form>
-  <aside class="form-aside"><div class="eyebrow">From idea to delivery</div><h2>Give us the full picture.</h2><p>Describe the purpose, audience and deliverables. Include any existing copy, examples or reference files.</p><ol class="steps"><li>Send your request.</li><li>Creative Services reviews the details.</li><li>A designer follows up to plan the work.</li></ol></aside></div>`;
+  main.innerHTML = classicClientForm(session);
   if (!session.canSubmit) document.querySelector('#form-status').textContent = 'Submissions are paused. Please try again after the pilot owner completes the DEV checks.';
   document.querySelector('#employee-request').addEventListener('submit', submit);
 }

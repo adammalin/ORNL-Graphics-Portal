@@ -56,3 +56,6 @@ dialog{border:1px solid var(--ornl-graphite);padding:0;max-width:690px;width:cal
 .assignment-history { padding-left: 1.25rem; }
 .assignment-history li { margin: 1rem 0; }
 .assignment-history p { margin: .5rem 0; }
+
+/* Hide the workspace skeleton while its classic client demo entry mounts. */
+html:has(script[src="/intake-demos/classic/config.js"]) body:not(.requester-site){visibility:hidden}

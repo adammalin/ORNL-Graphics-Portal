@@ -45,3 +45,16 @@ class IntakeDemoTests(PilotTestCase):
         self.assertNotIn('fetch(',script);self.assertNotIn('XMLHttpRequest',script)
         self.assertNotIn('/api/',script)
         self.assertIn('Nothing submitted',script)
+
+    def test_client_demo_modules_are_served_without_enabling_microsoft(self):
+        client,_=self.login('coord')
+        self.assertIn('/assets/intake/workspace-entry.js',self.get(client,'/intake-demos/classic').text)
+        for name in ['workspace-entry.js','classic-demo.js','classic-client-form.js']:
+            response=self.get(client,'/assets/intake/'+name)
+            self.assertEqual(response.status_code,200)
+        script=self.get(client,'/assets/intake/classic-demo.js').text
+        self.assertNotIn('fetch(',script)
+        self.assertNotIn('/api/',script)
+        self.assertIn('classicClientForm(session)',script)
+        self.assertIn('classicClientForm(session)',self.get(client,'/intake.js').text)
+        self.assertEqual(self.get(client,'/auth/microsoft/login').status_code,503)

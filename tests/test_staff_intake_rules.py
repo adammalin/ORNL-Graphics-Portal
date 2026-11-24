@@ -34,6 +34,10 @@ class StaffIntakeRuleTests(unittest.TestCase):
         self.assertEqual(self.save(self.body('2026-11-24',True)).status_code,503)
         self.assertEqual(len(self.p.writes()),before)
     def test_client_cannot_forge_staff_override_even_with_a_staff_cookie(self):
+        from backend.pilot import SESSION_COOKIE
+        cookie=self.staff.get_cookie(SESSION_COOKIE,domain='pilot.example.org')
+        self.assertIsNotNone(cookie)
+        self.client.set_cookie(SESSION_COOKIE,cookie.value,domain='pilot.example.org',secure=True)
         before=len(self.p.writes())
         for key in ['override','overrideLeadTime','canOverride']:
             body=self.p.body();body['fields'][key]=True

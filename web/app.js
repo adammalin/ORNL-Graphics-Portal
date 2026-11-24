@@ -43,7 +43,7 @@ const hoursLabel = p => p.hours == null ? 'Not estimated' : `${Number(p.hours) |
 const stageTag = value => `<span class="stage stage-${String(value).toLowerCase().replaceAll(' ','-')}">${e(value)}</span>`;
 const initials = name => name.split(/\s+/).map(n => n[0]).slice(0,2).join('').toUpperCase();
 const avatar = id => `<span class="avatar ${e(id)}" aria-hidden="true">${e(person(id)?.initials || initials(personName(id)))}</span>`;
-const route = () => { try { return decodeURIComponent(location.hash.slice(1) || '/').split('?')[0]; } catch { return '/not-found'; } };
+const route = () => { try { return decodeURIComponent(location.hash.slice(1) || (config.intakeComparison?'/new':'/')).split('?')[0]; } catch { return '/not-found'; } };
 const findProject = id => state.projects.find(p => p.id === id);
 const isCoordinator = () => authenticated ? ['coordinator','admin'].includes(state.actor?.role) : state.person === 'coordinator';
 const canEdit = p => !readonly() && (authenticated ? p.permissions?.edit === true : !p.readOnly&&(isCoordinator() || assignedDesigner(p) === state.person));
@@ -179,11 +179,12 @@ function notFound() { return `<div class="empty-state"><h1>Project not found</h1
 function updateChrome(path) {
   let nav=path==='/'?'home':path.split('/')[1]; if(path.startsWith('/projects/'))nav='projects';
   document.querySelectorAll('[data-nav]').forEach(a=>{const active=a.dataset.nav===nav;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  document.querySelector('#intake-demo-link').hidden=!authenticated;
   document.querySelector('#deleted-nav').hidden=!authenticated;
   document.querySelector('#reports-nav').hidden=!authenticated||!['coordinator','admin'].includes(state.actor?.role);
   document.querySelector('#my-count').textContent=myProjects(state.projects,state.person).length || '';
   const banner=document.querySelector('#mode-banner');banner.classList.toggle('live',readonly());
-  banner.textContent=authenticated&&state.actor?`Private DEV pilot · ${state.actor.name} · ${live()?'Saves to Smartsheet':'Read-only access'}`:state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
+  banner.textContent=config.intakeComparison?'NON-ACTIVE CLASSIC DEMO · Nothing is sent or saved to Smartsheet. No notifications. Changes stay in this tab; refresh resets the demo.':authenticated&&state.actor?`Private DEV pilot · ${state.actor.name} · ${live()?'Saves to Smartsheet':'Read-only access'}`:state.mode==='demo'?'Interactive demo · Synthetic projects · Changes stay in this tab':state.mode==='loading'?'Connecting to the local DEV gateway…':state.mode==='error'?'DEV connection unavailable':live()?'Local DEV editor · Saves to Smartsheet · Test roles only':'Local DEV preview · Read-only Smartsheet data · No ORNL sign-in connected';
   document.querySelector('#connection-label').textContent=state.mode==='demo'?'Demo workspace':state.mode==='error'?'Connection unavailable':authenticated?'Authenticated DEV pilot':'Local DEV connection';
   document.querySelector('#footer-mode').textContent=authenticated?`Invited DEV pilot · ${live()?'Saves enabled':'Read-only'}`:live()?'DEV saves enabled · Local testing only':readonly()?'Read-only DEV preview · Native flows unchanged':'Synthetic examples · No live submissions';
   document.querySelector('#refresh-workspace').hidden=!connected;

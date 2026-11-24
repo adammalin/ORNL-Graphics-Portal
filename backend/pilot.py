@@ -390,6 +390,8 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     def headers(response):
         response.headers.update({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
           'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",'Permissions-Policy':'camera=(), microphone=(), geolocation=()'})
+        if request.path.startswith('/intake-demos'):
+            response.headers['Content-Security-Policy'] = response.headers['Content-Security-Policy'].replace("connect-src 'self'", "connect-src 'none'").replace("form-action 'self'", "form-action 'none'")
         return response
 
     @app.errorhandler(WriteError)
@@ -558,6 +560,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
         response.delete_cookie(SESSION_COOKIE,secure=True,httponly=True,samesite='Lax',path='/')
         return response
 
+    from backend.intake_demos import register as register_intake_demos
+    register_intake_demos(app, signed_in)
+
     @app.get('/api/session')
     def session_info():
         s = signed_in()
@@ -687,7 +692,7 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
 
     @app.get('/<path:asset>')
     def static_asset(asset):
-        allowed = {'organization-fields.js','assignment-panel.js','app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js','guided-intake.js','guided-intake.css','business-days.js'}
+        allowed = {'organization-fields.js','assignment-panel.js','app.js','domain.js','demo-data.js','runtime-config.js','styles.css','ornl-design-tokens.css','intake.js','ai-panel.js', 'search-select.js', 'workspace-sync.js','http-client.js','reports.js','lifecycle.js','tutorial.js','tutorial-content.js','requester.js','guided-intake.js','guided-intake.css','business-days.js','intake-demo.js'}
         if asset not in allowed and not asset.startswith(('assets/fonts/','assets/favicon.','assets/intake/')):
             raise WriteError('Not found.',404)
         return send_from_directory(WEB,asset)

@@ -73,3 +73,8 @@ This is storage evidence through the existing staff route. It does **not** quali
 The expanded coverage found and repaired two requester projection defects: missing original directorate/division and a stale Assigned Designer formula overriding the current accepted contact. Regression coverage also checks hidden service values, safe original snapshots after internal notes change, unsafe references, aggregate native text limits and unchanged formula/system cells.
 
 **Release state: held.** Real Microsoft requester sign-in remains disabled, two-user requester ownership tests remain outstanding, and an approved ORNL holiday/closure calendar is still required. Keep the running tunneled pilot on its current code/config until these gates are met. Do not tunnel the synthetic launcher or substitute a fictional login.
+
+
+## Staff-only comparison demos
+
+The non-active Classic and Guided comparison pages can be hosted on the existing pilot before Microsoft setup, using the existing staff sign-in. See [comparison demo scope and rollback](intake-comparison-demos.md). This does not activate guided employee submission or My Requests. The operational rollout hold above applies to those real requester workflows, not these browser-only demonstrations.

@@ -34,7 +34,7 @@ FIELDS = {
     'title': 'Description', 'description': 'Additional Details', 'taskType': 'Task Type',
     'requestedDueDate': 'Due Date', 'finalDueDate': 'Final Due Date',
     'hours': 'Estimated Hours', 'priority': 'Priority', 'deliverables': 'Deliverables and Quantities',
-    'requestor': 'Requestor', 'email': 'Requestor Email',
+    'requestor': 'Requestor', 'email': 'Requestor Email', 'chargeNumber': 'Charge #',
     'reference1': 'Reference link 1', 'reference2': 'Reference link 2',
     **ORGANIZATION_FIELDS,
 }
@@ -249,6 +249,8 @@ class DevStore:
                     raise WriteError('Estimated hours must be between 0 and 10,000, or blank.')
             else:
                 value = text(value, title, key in ('title', 'description', 'requestor', 'email', 'taskType'))
+                if key == 'chargeNumber' and value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 ._/-]{0,79}', value):
+                    raise WriteError('Enter a charge number of up to 80 letters, numbers, spaces, dots, slashes, underscores or hyphens. Validation is still pending.')
                 if key == 'email' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
                     raise WriteError('Enter a valid requestor email.')
                 if key.startswith('reference') and value:

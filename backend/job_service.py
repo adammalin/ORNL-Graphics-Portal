@@ -207,6 +207,12 @@ class JobService:
         output['allowedStages']=allowed_stages(project)
         output['assignmentActions']={action:self._action_allowed(context,project,action,output['permissions']) for action in ('claim','reassign')}
         output['assignment']=context.reader.store.assignment_details(project)
+        # Creation actor is server-verified and immutable; editing the client must
+        # never transfer ownership, acceptance or employee tracking rights.
+        with context.reader.store.db() as db:
+            creation=db.execute("SELECT actor_json,at FROM portal_assignment_events WHERE sheet_id=? AND row_id=? AND state='confirmed' AND action IN ('create','create-self-assigned') ORDER BY event_id LIMIT 1", (context.reader.sheet_id,project['_rowId'])).fetchone()
+        output['submission'] = ({'actor':json.loads(creation[0]),'at':creation[1]} if creation else None)
+        output['chargeValidation'] = 'Pending validation' if project.get('chargeNumber') else 'Not provided'
         output['lifecycleVersion'] = self.runtime.lifecycle.state(context.reader.sheet_id,project['_rowId'])['version']
         output['requesterTrackable'] = False
         if getattr(self.runtime,'intake',None) and (self.runtime.active_config().value.get('microsoftIntake') or {}).get('enabled'):
@@ -377,15 +383,18 @@ class JobService:
                     if (action == 'edit' and isinstance(body.get('fields'), dict)
                             and set(body['fields']) & {'directorate', 'division'} and not principal.can_coordinate):
                         raise WriteError('Only coordinators and admins can change routing organization fields.', 403)
+                    if action == 'edit' and isinstance(body.get('fields'),dict) and set(body['fields']) & {'requestor','email','chargeNumber'} and principal.role not in ('designer','coordinator','admin'):
+                        raise WriteError('Only verified Graphics staff may edit client or charge information.',403)
                     if action in ('offer','reassign') and body.get('designer') not in self.runtime.active_config().invites:
                         raise WriteError('Offer jobs only to invited pilot users.', 403)
                 if isinstance(body,dict) and body.get('action')=='claim':
                     self_assign_to=principal.email
             else:
-                if (not isinstance(body, dict) or set(body)-{'fields','assignToMe','overrideLeadTime'}
+                if (not isinstance(body, dict) or set(body)-{'fields','assignToMe','overrideLeadTime','onBehalfOf'}
                         or not isinstance(body.get('fields'), dict)
                         or type(body.get('assignToMe',False)) is not bool
-                        or type(body.get('overrideLeadTime',False)) is not bool):
+                        or type(body.get('overrideLeadTime',False)) is not bool
+                        or type(body.get('onBehalfOf',False)) is not bool):
                     raise WriteError('Invalid intake fields.')
                 # Acceptance can only be recorded for the authenticated creator,
                 # never for a caller-supplied designer or an existing job.
@@ -393,7 +402,14 @@ class JobService:
                 override_lead_time = body.get('overrideLeadTime', False)
                 if override_lead_time and principal.role not in ('designer','coordinator','admin'):
                     raise WriteError('Only verified Graphics staff may override minimum lead time.',403)
-                fields = {**body['fields'], 'email': principal.email, 'requestor': principal.name}
+                on_behalf = body.get('onBehalfOf',False)
+                if (on_behalf or 'chargeNumber' in body['fields']) and principal.role not in ('designer','coordinator','admin'):
+                    raise WriteError('Only verified Graphics staff may enter a client or charge number.',403)
+                fields = dict(body['fields'])
+                if not on_behalf:
+                    fields.update(email=principal.email,requestor=principal.name)
+                elif not all(isinstance(fields.get(k),str) and fields[k].strip() for k in ('requestor','email')):
+                    raise WriteError('Enter the client name and email when submitting on behalf of a client.')
                 if intake_policy(self.runtime.active_config(), staff=True) or override_lead_time:
                     with reader.store.db() as db:
                         replay = db.execute('SELECT 1 FROM operations WHERE sheet=? AND key=?', (reader.sheet_id,key)).fetchone()

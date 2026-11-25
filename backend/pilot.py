@@ -25,7 +25,7 @@ from urllib.request import Request, build_opener
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
 try:
-    from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
+    from backend.server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type, attachment_delivery
     from backend.dev_store import WriteError, SaveRefreshError
     from backend.principals import Actor
     from backend.job_service import JobService, PilotStore
@@ -36,7 +36,7 @@ try:
     from backend.pilot_credentials import CredentialError, client_id_from_config, load_secret
     from backend.onboarding import Onboarding
 except ImportError:
-    from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type
+    from server import SmartsheetReader, GatewayError, NoRedirect, WEB, MAX_FILE_BYTES, media_type, attachment_delivery
     from dev_store import WriteError, SaveRefreshError
     from principals import Actor
     from job_service import JobService, PilotStore
@@ -664,9 +664,9 @@ def create_app(config, secret, oauth_transport=None, reader_factory=SmartsheetRe
     @app.get('/api/projects/<job>/attachments/<attachment>')
     def attachment(job,attachment):
         content,mime,name = runtime.jobs.attachment(request.cookies.get(SESSION_COOKIE),job,attachment)
-        mime = media_type(mime)
-        download = 'download' in request.args or mime not in {'image/png','image/jpeg','image/webp','text/plain'}
-        response = Response(content,content_type='application/octet-stream' if download else mime)
+        response_type, download = attachment_delivery(content, mime,
+            pdf_preview=request.args.getlist('preview') == ['1'], force_download='download' in request.args)
+        response = Response(content,content_type=response_type)
         response.headers['Content-Disposition'] = ('attachment' if download else 'inline')+"; filename*=UTF-8''"+quote(name,safe='')
         return response
 

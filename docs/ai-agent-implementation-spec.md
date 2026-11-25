@@ -1,3 +1,5 @@
+> Current browser integration (2026-11-25): authenticated page WebMCP is implemented in [browser-page-tools.md](browser-page-tools.md). It inherits the existing browser session and has no separate server grant. The unused stdio candidate has been retired. Remote/server-agent sections below remain future design, not deployed capabilities.
+
 # AI and agent integration implementation specification
 
 Version: 1.0 — November 17, 2026

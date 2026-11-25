@@ -77,6 +77,16 @@ def url_value(cell):
 def media_type(value):
     return str(value or '').partition(';')[0].strip().lower()
 
+def attachment_delivery(content, mime, *, pdf_preview=False, force_download=False):
+    """Keep active/unknown formats download-only; opt valid PDF bytes into native preview."""
+    mime = media_type(mime)
+    inline = mime in {'image/png', 'image/jpeg', 'image/webp', 'text/plain'}
+    if mime == 'application/pdf' and pdf_preview and content.startswith(b'%PDF-'):
+        inline = True
+    download = force_download or not inline
+    return ('application/octet-stream' if download else mime), download
+
+
 def date_value(cell):
     value = str(cell.get('value') or '')
     return value[:10] if len(value) >= 10 and value[4:5] == '-' and value[7:8] == '-' else ''
@@ -140,7 +150,7 @@ def normalize_sheet(sheet, sheet_id, row_ids, copied_row_ids=frozenset()):
         if any(p['id'] == job_id for p in projects):
             raise GatewayError('Ambiguous DEV job identifier. No job details will be returned.')
         task_types = (cells.get('Task Type', {}).get('objectValue') or {}).get('values', [])
-        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': not copied, 'readOnly': copied, 'sourceStatus': source_status, 'nativeStatus': v('Status'), 'responseStatus': v('Update Status'), 'assignedDate': date_value(cells.get('Req Assigned / Closed', {})), 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'directorate': v('Owner Directorate'), 'division': v('Owner Division/Office/Facility'), 'coordinatingManager': contact(cells.get('Assigning Manager', {}))[0], 'coordinatingManagerName': contact(cells.get('Assigning Manager', {}))[1], 'requestorGroup': department_value(cells, display), 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
+        projects.append({'id': job_id, '_rowId': str(row['id']), 'revision': revision(row), 'synthetic': not copied, 'readOnly': copied, 'sourceStatus': source_status, 'nativeStatus': v('Status'), 'responseStatus': v('Update Status'), 'assignedDate': date_value(cells.get('Req Assigned / Closed', {})), 'title': title, 'description': v('Additional Details'), 'notes': '', 'taskType': ' · '.join(task_types) or v('Task Type'), 'taskTypes': task_types or ([v('Task Type')] if v('Task Type') else []), 'stage': stage, 'requestedDesigner': designer_id, 'response': response, 'hours': hours, 'requestedDueDate': date_value(cells.get('Due Date', {})), 'finalDueDate': date_value(cells.get('Final Due Date', {})), 'dueDate': date_value(cells.get('Final Due Date', {})) or date_value(cells.get('Due Date', {})), 'createdDate': date_value(cells.get('Req Received', {})), 'completedDate': date_value(cells.get('Completed Date', {})), 'priority': v('Priority') or 'Normal', 'requestor': v('Requestor'), 'email': v('Requestor Email'), 'chargeNumber': v('Charge #'), 'directorate': v('Owner Directorate'), 'division': v('Owner Division/Office/Facility'), 'coordinatingManager': contact(cells.get('Assigning Manager', {}))[0], 'coordinatingManagerName': contact(cells.get('Assigning Manager', {}))[1], 'requestorGroup': department_value(cells, display), 'deliverables': v('Deliverables and Quantities'), 'references': references, 'attachments': attachments})
     return projects, list(people.values())
 
 class SmartsheetReader:
@@ -399,11 +409,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                 parts = path.strip('/').split('/')
                 if len(parts) == 5 and parts[:2] == ['api', 'projects'] and parts[3] == 'attachments':
                     content, mime, name = self.server.reader.attachment(unquote(parts[2]), parts[4])
-                    mime = media_type(mime)
-                    allowed_preview = {'image/png', 'image/jpeg', 'image/webp', 'text/plain'}
-                    download = 'download' in parse_qs(urlsplit(self.path).query) or mime not in allowed_preview
+                    query = parse_qs(urlsplit(self.path).query)
+                    response_type, download = attachment_delivery(content, mime,
+                        pdf_preview=query.get('preview') == ['1'], force_download='download' in query)
                     disposition = f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(name, safe='')}"
-                    self.response(200, content, 'application/octet-stream' if download else mime, {'Content-Disposition': disposition})
+                    self.response(200, content, response_type, {'Content-Disposition': disposition})
                     return
                 self.json_response(404, {'error': 'Unknown read-only endpoint.'})
             except (GatewayError, WriteError) as error:

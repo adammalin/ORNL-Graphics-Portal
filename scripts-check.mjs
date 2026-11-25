@@ -10,7 +10,7 @@ const tokens=await readFile(join(root,'web/ornl-design-tokens.css'),'utf8');
 const palette=new Set([...tokens.matchAll(/#[0-9a-f]{6}\b/gi)].map(m=>m[0].toLowerCase()));
 for(const [file,content] of text){
   assert(!/github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|Bearer\s+[A-Za-z0-9_-]{25,}/.test(content),`Possible credential in ${file}`);
-  if(file.includes('/web/'))for(const match of content.matchAll(/#[0-9a-f]{6}\b/gi))assert(palette.has(match[0].toLowerCase()),`Unapproved color ${match[0]} in ${file}`);
+  if(file.includes('/web/')&&!file.includes('/assets/intake/pdfjs/'))for(const match of content.matchAll(/#[0-9a-f]{6}\b/gi))assert(palette.has(match[0].toLowerCase()),`Unapproved color ${match[0]} in ${file}`);
 }
 const publicConfig=await readFile(join(root,'web/runtime-config.js'),'utf8');
 assert.match(publicConfig,/dataMode:\s*'demo'/);assert.match(publicConfig,/apiBase:\s*null/);

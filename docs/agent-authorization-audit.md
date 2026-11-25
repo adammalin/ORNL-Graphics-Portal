@@ -1,3 +1,5 @@
+> Current browser integration (2026-11-25): authenticated page WebMCP is implemented in [browser-page-tools.md](browser-page-tools.md). It inherits the existing browser session and has no separate server grant. The unused stdio candidate has been retired. Remote/server-agent sections below remain future design, not deployed capabilities.
+
 > November 23 pilot renewal: the manual automation review may now cover the approved testing window, capped at seven days and the pilot expiration. Per-write native automation checks remain mandatory. See [pilot setup](pilot.md). References below to the 24-hour review describe the earlier policy.
 
 # User, agent and job-ownership security audit

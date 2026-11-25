@@ -73,3 +73,12 @@ class StaffIntakeRuleTests(unittest.TestCase):
             self.assertIn(value,project['description'])
         self.assertEqual(project['description'].count('Reproduction —'),1)
         self.assertEqual(project['email'],'designer@example.org')
+
+    def test_employee_cannot_select_client_or_charge_through_staff_fields(self):
+        before=len(self.p.writes())
+        for key,value in [('onBehalfOf',True),('chargeNumber','DEMO26QA1'),('submittedBy','forged@example.org')]:
+            body=self.p.body();body['fields'][key]=value
+            self.assertEqual(self.p.ms_write(self.client,'/api/intake/requests',body).status_code,400)
+            body=self.p.body();body[key]=value
+            self.assertEqual(self.p.ms_write(self.client,'/api/intake/requests',body).status_code,400)
+        self.assertEqual(len(self.p.writes()),before)

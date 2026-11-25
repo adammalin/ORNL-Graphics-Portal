@@ -84,3 +84,7 @@ The private pilot now includes `/#/reports`: coordinator-only service activity, 
 ### User and agent authorization audit
 
 See [the audit and permission matrix](docs/agent-authorization-audit.md). The private pilot now supports explicit admin roles and recoverable portal delete/restore. Standard staff deletion requires permanent-row creator proof; assignment alone grants no deletion rights. Separate MCP/delegated agent access remains disabled. Native Smartsheet rows, files and workflows are retained by portal deletion.
+
+## Current qualification priorities
+
+See the [qualification roadmap](docs/qualification-roadmap.md) for the agreed acceptance checks: complete staff lifecycle first, employee privacy after Microsoft setup, failure recovery, service notifications, official-calendar deadlines and broader PDF/accessibility coverage. Planned checks remain distinct from completed tests. Current implementation details: [staff/client and charge handling](docs/staff-client-charge-intake.md), [browser page tools](docs/browser-page-tools.md) and [authenticated PDF previews](docs/pdf-preview.md).
